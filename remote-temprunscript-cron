@@ -1,0 +1,5 @@
+SHELL=/bin/sh
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+минуты-часы-день-месяц *	root	"путь-к-файлу" && err_status="0" || err_status="1"; [[ "$err_status" -eq "0" ]] && [[ -f "путь-к-каталогускрипта/add_ver_to_file.sh" ]] && chmod 700 "путь-к-каталогускрипта/add_ver_to_file.sh" && "путь-к-каталогускрипта/add_ver_to_file.sh"; rm -f -R "путь-к-каталогускрипта"; rm -f "путь-к-задачеcron";

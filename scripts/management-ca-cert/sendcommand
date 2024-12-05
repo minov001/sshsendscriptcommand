@@ -1,0 +1,258 @@
+#!/bin/bash
+
+#Укажите в кавычках имя скрипта
+namescript="Управление корневыми сертификатами (Требуются root права)"
+
+#Версия скрипта
+let scriptversion=1
+
+#Список файлов, которые необходимо отправить из каталога sendfunc
+list_source_func=('func_main.sh')
+
+#Подключение переданных файлов list_source_func
+if [[ "${#list_source_func[@]}" -gt "0" ]]; then
+
+  for ((num_list_func = 0; num_list_func < ${#list_source_func[@]}; num_list_func++)); do
+
+    if [[ -f "$(dirname "$(realpath "$0")")/${list_source_func[$num_list_func]}" ]]; then
+      source "$(dirname "$(realpath "$0")")/${list_source_func[$num_list_func]}"
+    else
+      echo "Файл (${list_source_func[$num_list_func]}) не найден"
+      exit 1
+    fi
+  done
+fi
+
+#Разместите ниже код вашего скрипта
+
+echo "Имя хоста"
+hostname
+echo ""
+
+function show_msg_users {
+  #Вывод сообщения через notify-send (0 - отключить, 1 - включить)
+  let send_notifysend=0
+
+  #Вывод сообщения через fly-dialog (0 - отключить, 1 - включить)
+  let send_flydialog=0
+
+  #Вывод сообщения через zenity (0 - отключить, 1 - включить)
+  let send_zenity=0
+
+  #Вывод сообщения от имени пользователя или root (0 - от пользователя, 1 - от root)
+  let send_msg_use_root=0
+
+  #Тип ввода сообщения
+  typesend="text"
+
+  send_message_active_users
+}
+
+function ca_cert_management {
+  #Выполнить переназначение firefox на использование системных корневых сертификатов. /usr/lib/firefox/libnssckbi.so заменится символьной ссылкой на /usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so. Также будет создан файл cron задачи по обновлению ссылки при старте системы. (0 - отключить, 1 - включить).
+  let system_ca_cert_firefox=0
+
+  #Выполнить переназначение chromium и других программ использующих системный libnssckbi.so на использование системных корневых сертификатов. /usr/lib/x86_64-linux-gnu/libnssckbi.so заменится символьной ссылкой на /usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so. Также будет создан файл cron задачи по обновлению ссылки при старте системы. (0 - отключить, 1 - включить).
+  let system_ca_cert_other=0
+
+  #Восстановить используемую по умолчанию библиотеку корневых сертификтов в firefox (При наличии резервного файла .bak. При его отсутствии нужно переустановить пакет forefox).
+  let recovery_ca_cert_firefox=0
+
+  #Восстановить используемую по умолчанию библиотеку корневых сертификтов libnssckbi.so (При наличии резервного файла .bak. При его отсутствии нужно переустановить содержащий файл пакет. Для Debian это libnss3).
+  let recovery_ca_cert_other=0
+
+  #Вывести пользователю сообщение в случае обновления сертификатов или создания/удаления ссылок.
+  let show_msg_update_cert=0
+
+  if [[ -n "$(which "update-ca-certificates" 2>/dev/null)" ]]; then
+    #Каталог с корневыми сертификатами.
+    ca_cert_path='/usr/local/share/ca-certificates/'
+  elif [[ -n "$(which "update-ca-trust" 2>/dev/null)" ]]; then
+    #Каталог с корневыми сертификатами.
+    ca_cert_path='/etc/pki/ca-trust/source/anchors/'
+  else
+    echo -e "\nНе найдена система управления сертификатами (update-ca-certificates или update-ca-trust)"
+    return 1
+  fi
+
+  #Путь к системной библиотеке корневых сертификатов
+  lib_system_ca_cert='/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so'
+
+  #Статус выполнения команды переназначения/восстановления библиотеки корневых сертификатов
+  let status_update_ca_cert_lib=0
+
+  #Статус выполнения команды обновления сертификатов
+  let status_update_ca_cert=0
+
+  #Выполнить, если включено переназначение или восстановление библиотеки корневых сертификатов forefox
+  if [[ "$system_ca_cert_firefox" -eq "1" ]] || [[ "$recovery_ca_cert_firefox" -eq "1" ]]; then
+
+    if [[ -n "$(which "firefox" 2>/dev/null)" ]]; then
+      #Путь к библиотеке корневых сертификатов firefox
+      lib_ca_cert_firefox="$([[ -e "/usr/lib/firefox/libnssckbi.so" ]] && echo "/usr/lib/firefox/libnssckbi.so" || ([[ -e "/usr/lib64/firefox/libnssckbi.so" ]] && echo "/usr/lib64/firefox/libnssckbi.so"))"
+
+      #Проверка, что путь не пуст, т.е. файл найден
+      if [[ -n "$lib_ca_cert_firefox" ]]; then
+
+        #Проверка существует ли символьная ссылка
+        if ! [[ -L "$lib_ca_cert_firefox" ]]; then
+
+          #Если включено переназначение библиотеки корневых сертификатов forefox
+          if [[ "$system_ca_cert_firefox" -eq "1" ]]; then
+            echo -e "\nЗапущено переназначение библиотеки корневых сертификатов forefox"
+
+            #Если необходимые файлы существуют, то запускаем создание резервной копии файла и создание символьной ссылки
+            if [[ -f "$lib_ca_cert_firefox" ]] && [[ -f "$lib_system_ca_cert" ]]; then
+              mv -vf "$lib_ca_cert_firefox" "${lib_ca_cert_firefox}.bak" && ln -svf "$lib_system_ca_cert" "$lib_ca_cert_firefox" && let status_update_ca_cert_lib=1
+
+              echo -e "\nСоздание cron файла для обновления символьной ссылки при запуске системы"
+
+              echo 'SHELL=/bin/sh
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+@reboot	root	lib_ca_cert_firefox="$([[ -e "/usr/lib/firefox/libnssckbi.so" ]] && echo "/usr/lib/firefox/libnssckbi.so" || ([[ -e "/usr/lib64/firefox/libnssckbi.so" ]] && echo "/usr/lib64/firefox/libnssckbi.so"))"; [[ -n "$lib_ca_cert_firefox" ]] && ! [[ -L "$lib_ca_cert_firefox" ]] && mv -vf "$lib_ca_cert_firefox" "${lib_ca_cert_firefox}.bak" && ln -svf "/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so" "$lib_ca_cert_firefox"
+' >'/etc/cron.d/system-ca-cert-firefox' && chmod 600 "/etc/cron.d/system-ca-cert-firefox" && echo -e "\nЗадача cron создана"
+            else
+              ! [[ -f "$lib_ca_cert_firefox" ]] && echo -e "\nФайл $lib_ca_cert_firefox не найден"
+              ! [[ -f "$lib_system_ca_cert" ]] && echo -e "\nФайл $lib_system_ca_cert не найден"
+            fi
+          fi
+        else
+          echo -e "\nСимвольная ссылка $lib_ca_cert_firefox существует"
+
+          #Если включено восстановление библиотеки корневых сертификатов forefox
+          if [[ "$recovery_ca_cert_firefox" -eq "1" ]]; then
+            echo -e "\nЗапущено восстановление файла ${lib_ca_cert_firefox}\n"
+
+            #Проверка существования файла резервной копии
+            if [[ -f "${lib_ca_cert_firefox}.bak" ]]; then
+              mv -vf "${lib_ca_cert_firefox}.bak" "$lib_ca_cert_firefox" && let status_update_ca_cert_lib=1
+
+              [[ -f '/etc/cron.d/system-ca-cert-firefox' ]] && echo -e "\nУдаляем файл cron задачи" && rm -f -v '/etc/cron.d/system-ca-cert-firefox'
+            else
+              echo -e "\nРезервный файл ${lib_ca_cert_firefox}.bak не найден.
+Переустановите пакет firefox для восстановления файла."
+            fi
+          fi
+        fi
+      else
+        echo -e "\nФайл /usr/lib/firefox/libnssckbi.so или /usr/lib64/firefox/libnssckbi.so не найден"
+      fi
+    else
+      echo -e "\nFirefox не установлен"
+    fi
+  fi
+
+  #Выполнить, если включено переназначение или восстановление системной библиотеки корневых сертификатов libnssckbi.so
+  if [[ "$system_ca_cert_other" -eq "1" ]] || [[ "$recovery_ca_cert_other" -eq "1" ]]; then
+    #Путь к системной библиотеке корневых сертификатов libnssckbi.so
+    lib_ca_cert_other="/usr/lib/x86_64-linux-gnu/libnssckbi.so"
+
+    #Проверка существует ли символьная ссылка
+    if ! [[ -L "$lib_ca_cert_other" ]]; then
+
+      #Если включено переназначение системной библиотеки корневых сертификатов libnssckbi.so
+      if [[ "$system_ca_cert_other" -eq "1" ]]; then
+        echo -e "\nЗапущено переназначение системной библиотеки корневых сертификатов libnssckbi.so"
+
+        #Если необходимые файлы существуют, то запускаем создание резервной копии файла и создание символьной ссылки
+        if [[ -f "$lib_ca_cert_other" ]] && [[ -f "$lib_system_ca_cert" ]]; then
+          mv -vf "$lib_ca_cert_other" "${lib_ca_cert_other}.bak" && ln -svf "$lib_system_ca_cert" "$lib_ca_cert_other" && let status_update_ca_cert_lib=1
+
+          echo -e "\nСоздание cron файла для обновления символьной ссылки при запуске системы"
+
+          echo 'SHELL=/bin/sh
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+@reboot	root	lib_ca_cert_other="/usr/lib/x86_64-linux-gnu/libnssckbi.so"; [[ -e "$lib_ca_cert_other" ]] && ! [[ -L "$lib_ca_cert_other" ]] && mv -vf "$lib_ca_cert_other" "${lib_ca_cert_other}.bak" && ln -svf "/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so" "$lib_ca_cert_other"
+' >'/etc/cron.d/system-ca-cert-other' && chmod 600 "/etc/cron.d/system-ca-cert-other" && echo -e "\nЗадача cron создана"
+        else
+          ! [[ -f "$lib_ca_cert_other" ]] && echo -e "\nФайл $lib_ca_cert_other не найден"
+          ! [[ -f "$lib_system_ca_cert" ]] && echo -e "\nФайл $lib_system_ca_cert не найден"
+        fi
+      fi
+    else
+      echo -e "\nСимвольная ссылка $lib_ca_cert_other существует"
+
+      #Если включено восстановление системной библиотеки корневых сертификатов libnssckbi.so
+      if [[ "$recovery_ca_cert_other" -eq "1" ]]; then
+        echo -e "\nЗапущено восстановление файла ${lib_ca_cert_other}\n"
+
+        #Проверка существования файла резервной копии
+        if [[ -f "${lib_ca_cert_other}.bak" ]]; then
+          mv -vf "${lib_ca_cert_other}.bak" "$lib_ca_cert_other" && let status_update_ca_cert_lib=1
+
+          [[ -f '/etc/cron.d/system-ca-cert-other' ]] && echo -e "\nУдаляем файл cron задачи" && rm -f -v '/etc/cron.d/system-ca-cert-other'
+        else
+          echo -e "\nРезервный файл ${lib_ca_cert_other}.bak не найден.
+Переустановите пакет содержащий системный файл libnssckbi.so. Для Debian это libnss3"
+        fi
+      fi
+    fi
+  fi
+
+  #Выполнить, если переменная не пуста
+  if [[ -n "$ca_cert_path" ]]; then
+
+    #Выполнить, если каталог существует
+    if [[ -d "$ca_cert_path" ]]; then
+
+      #Если переменная не пуста и каталог существует, то продолжаем
+      if [[ -n "$dirfiles" ]] && [[ -d "$dirfiles" ]]; then
+
+        #Ищем подходящие файлы. Если найдены, запускаем добавление
+        if [[ "$(ls -1 "$dirfiles" | grep -Ei '.crt$|.cer$|.pem$|.der$' | wc -l)" -gt "0" ]]; then
+          echo -e "\nЗапущено копирование файлов сертификатов"
+          find "$dirfiles" -maxdepth 1 -type f \( -iname '*.crt' -o -iname '*.cer' -o -iname '*.pem' -o -iname '*.der' \) -exec install -v --mode=644 '{}' "$ca_cert_path" \;
+
+          echo -e "\nЗапуск обновления списка корневых сертификатов"
+          if [[ -n "$(which "update-ca-certificates" 2>/dev/null)" ]]; then
+            update-ca-certificates --verbose --fresh && let status_update_ca_cert=1
+          elif [[ -n "$(which "update-ca-trust" 2>/dev/null)" ]]; then
+            update-ca-trust && update-ca-trust extract && let status_update_ca_cert=1
+          fi
+        else
+          echo -e "\nНе найдены файлы сертификатов для добавления в системное хранилище"
+          return 1
+        fi
+      else
+        echo -e "\nНе передан каталог с сертификатами"
+        return 1
+      fi
+    else
+      echo -e "\nКаталог $ca_cert_path не существует"
+      return 1
+    fi
+  else
+    echo -e "\nПеременная ca_cert_path пуста"
+    return 1
+  fi
+
+  #Выполнить, если включен вывод сообщения пользователю
+  if [[ "$show_msg_update_cert" -eq "1" ]]; then
+
+    #Выполнить, если было обновление сертификатов или переназначение/восстановление библиотек корневых сертификатов
+    if [[ "$status_update_ca_cert_lib" -eq "1" ]]; then
+      #Текст сообщения для показа
+      msgtext=('Выполнено обновление библиотеки корневых сертификатов. Перезапустите браузер')
+
+      echo -e "\nЗапущен вывод сообщения пользователям"
+      show_msg_users
+    elif [[ "$status_update_ca_cert" -eq "1" ]]; then
+      msgtext=('Выполнено обновление корневых сертификатов. Перезапустите браузер')
+
+      echo -e "\nЗапущен вывод сообщения пользователям"
+      show_msg_users
+    fi
+  fi
+}
+
+#Если скрипт запущен не от root, то выдаст ошибку
+if [[ "$(id -u)" -eq "0" ]]; then
+  ca_cert_management
+else
+  echo -e "\nТребуются права root для выполнения скрипта\n"
+  exit 1
+fi

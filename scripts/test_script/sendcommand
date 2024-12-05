@@ -1,0 +1,73 @@
+#!/bin/bash
+
+namescript="Тестовый скрипт"
+
+#Версия скрипта
+let scriptversion=1
+
+#Список файлов, которые необходимо отправить из каталога sendfunc
+list_source_func=('func test1.sh' 'func test2.sh')
+
+#Подключение переданных файлов list_source_func
+if [[ "${#list_source_func[@]}" -gt "0" ]]; then
+
+  for ((num_list_func = 0; num_list_func < ${#list_source_func[@]}; num_list_func++)); do
+
+    if [[ -f "$(dirname "$(realpath "$0")")/${list_source_func[$num_list_func]}" ]]; then
+      source "$(dirname "$(realpath "$0")")/${list_source_func[$num_list_func]}"
+    else
+      echo "Файл (${list_source_func[$num_list_func]}) не найден"
+      exit 1
+    fi
+  done
+fi
+
+#Разместите ниже код вашего скрипта
+
+#Тест каталога переданных файлов
+#Переменная dirfiles будет автоматически добавлена в скрипт, если выбран каталог с дополнительными файлами для отправки
+echo "Путь к каталогу дополнительных файлов: $dirfiles"
+echo ""
+
+#Тест переданных файлов list_source_func
+ip_info_func1
+
+echo ""
+
+uname_info_func2
+
+#Тест внесения изменений в переменные
+test_number=
+echo "Введенное число: $test_number"
+
+echo ""
+
+test_truefalse=
+echo "Выбор 0/1: $test_truefalse"
+
+echo ""
+
+test_list_values=
+echo "Выбор из списка: $test_list_values"
+
+echo ""
+
+test_text=
+echo "Текстовое значение: $test_text"
+
+echo ""
+
+test_massive=
+echo "Значений в массиве: ${#test_massive[@]}"
+echo "Значения массива:"
+for ((v = 0; v < ${#test_massive[@]}; v++)); do echo "${test_massive[$v]}"; done
+
+echo ""
+
+test_errscript="0"
+if [[ "$test_errscript" -eq "1" ]]; then
+  echo -e "Тест завершения скрипта с exit 1\n"
+  exit 1
+fi
+
+#Конец кода вашего скрипта

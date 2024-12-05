@@ -1,0 +1,77 @@
+#!/bin/bash
+
+#Укажите в кавычках имя скрипта
+namescript="Установка КриптоПРО (Требуются root права)"
+
+#Версия скрипта
+let scriptversion=1
+
+#Разместите ниже код вашего скрипта
+
+echo "Имя хоста"
+hostname
+echo ""
+
+function cprocsp_inst {
+  #Выполнить принудительную установку, даже если версия совпадает. Установить значение 1
+  let forceinstall=0
+
+  #Функция установки через родной файл install.sh с указанием пакетов
+  function cprocspinstall {
+    if [[ -n "$(which apt 2>/dev/null)" ]]; then
+      apt update
+    elif [[ -n "$(which apt-get 2>/dev/null)" ]]; then
+      apt-get update
+    fi
+
+    name_pkg_inst="cprocsp-cptools-gtk-64* cprocsp-curl-64* cprocsp-rdr-cloud-64* cprocsp-rdr-cpfkc-64* cprocsp-rdr-cryptoki-64* cprocsp-rdr-edoc-64* cprocsp-rdr-emv-64* cprocsp-rdr-gui-gtk-64* cprocsp-rdr-infocrypt-64* cprocsp-rdr-inpaspot-64* cprocsp-rdr-jacarta-64* cprocsp-rdr-kst-64* cprocsp-rdr-mskey-64* cprocsp-rdr-novacard-64* cprocsp-rdr-pcsc-64* cprocsp-rdr-rosan-64* cprocsp-rdr-rutoken-64* cprocsp-stunnel-64* lsb-cprocsp-base* lsb-cprocsp-ca-certs* lsb-cprocsp-capilite-64* lsb-cprocsp-import-ca-certs* lsb-cprocsp-kc1-64* lsb-cprocsp-pkcs11-64* lsb-cprocsp-rdr-64* cprocsp-pki-cades-64* cprocsp-pki-plugin-64*"
+
+    #Запуск инсталляции
+    "$dirfiles/install.sh" --yes kc1 "$name_pkg_inst"
+  }
+
+  #Если файл существует, то выполнение продолжается
+  if [[ -f "$dirfiles/install.sh" ]]; then
+
+    #Если файл существует, то запустится сравнение версий, иначе будет запущена установка
+    if [[ -e "/opt/cprocsp/bin/amd64/csptestf" ]] && [[ -f "$dirfiles/linux-amd64.ini" ]]; then
+      #Определяем текущую версию
+      currentver=$(/opt/cprocsp/bin/amd64/csptestf -keyset -verifycontext | sed -n 's/.* Ver:*\([0-9.]\+\).*/\1/p')
+
+      echo -e "\nТекущая версия: $currentver\n"
+
+      #Считываем из инсталлятора
+      installver=$(cat "$dirfiles/linux-amd64.ini" | grep version= | cut -d'=' -f2)
+
+      echo -e "Версия в инсталляторе: $installver\n"
+
+      #Если версии не равны или задана принудительная установка, то запуск установки
+      if [[ "$currentver" != "$installver" ]] || [[ "$forceinstall" -eq "1" ]]; then
+        echo -e "Запуск установки\n"
+        cprocspinstall
+      else
+        echo -e "Обновление КриптоПРО не требуется\n"
+      fi
+    else
+      echo -e "\nКриптоПРО не установлен. Запуск установки\n"
+      cprocspinstall
+    fi
+  else
+    echo -e "\nНе найден файл install.sh\n"
+    return 1
+  fi
+}
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  if [[ -n "$dirfiles" ]]; then
+    cprocsp_inst
+  else
+    echo -e "\nНет каталога переданных файлов\n"
+    exit 1
+  fi
+else
+  echo -e "\nТребуются права root для выполнения скрипта\n"
+  exit 1
+fi
+
+#Конец кода вашего скрипта

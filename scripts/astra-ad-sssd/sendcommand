@@ -1,0 +1,127 @@
+#!/bin/bash
+
+#Укажите в кавычках имя скрипта
+namescript="Домен AD (SSSD). Подключение/отключение устройства Astra linux (Требуются root права)"
+
+#Версия скрипта
+let scriptversion=1
+
+#Разместите ниже код вашего скрипта
+
+#Имя домена (Обязательная переменная для выполнения команды)
+domain_name=
+
+#Имя администратора (Обязательная переменная для выполнения команды)
+admin_name=
+
+#Имя контроллера домена
+dc_name=
+
+#IP адрес. Если заполнено, то команде будет передан параметр -ip с указанным ip адресом
+ip_adress=
+
+#Отключить запрос подтверждения (Для передачи параметра -y выбрать 1)
+let forceyes=0
+
+#Не создавать новый hosts и smb.conf (для передачи параметра -c команде, выберите 1)
+let no_create_hosts_and_smb=0
+
+#Если заполнено, то команде передается параметр -n (Задать адрес сервера точного времени (NTP)). Если не задан, то в качестве сервера точного времени будет использоваться контроллер домена.
+ntp_server=
+
+#Выполнить блок введения устройства в домен (Для включения выбрать 1)
+let input_in_domain=0
+
+#Выполнить блок отключения устройства от домена (Для включения выбрать 1)
+let exit_domain=0
+
+#Использовать полные доменные имена (1-полные; 0-короткие)
+let use_fullnames=1
+
+#Установить fly-admin-ad-sssd-client (Для включения выбрать 1)
+let inst_fly_admin_ad_sssd_client=0
+
+function astra_comp_input_ad {
+  if [[ "$inst_fly_admin_ad_sssd_client" -eq "1" ]]; then
+    apt update
+    apt install fly-admin-ad-sssd-client
+  fi
+
+  if [[ -n "$(which astra-ad-sssd-client 2>/dev/null)" ]]; then
+    status_input_domain="$(tail -1 <<<"$(sudo astra-ad-sssd-client -i && echo 1 || echo 0)")"
+
+    if [[ "$status_input_domain" -eq "0" ]]; then
+
+      if [[ "$input_in_domain" -eq "1" ]]; then
+        echo "Запущен блок ввода в домен"
+
+        if [[ -n "$admin_name" && -n "$domain_name" ]]; then
+          runcmd="astra-ad-sssd-client -d $domain_name -u $admin_name"
+
+          if [[ "$use_fullnames" -eq "1" ]]; then
+            runcmd="$runcmd -fn"
+          elif [[ "$use_fullnames" -eq "0" ]]; then
+            runcmd="$runcmd -sn"
+          fi
+
+          if [[ "$no_create_hosts_and_smb" -eq "1" ]]; then
+            runcmd="$runcmd -c"
+          fi
+
+          if [[ "$forceyes" -eq "1" ]]; then
+            runcmd="$runcmd -y"
+          fi
+
+          if [[ -n "$ntp_server" ]]; then
+            runcmd="$runcmd -n $ntp_server"
+          fi
+
+          if [[ -n "$ip_adress" ]]; then
+            runcmd="$runcmd -ip $ip_adress"
+          fi
+
+          if [[ -n "$dc_name" ]]; then
+            runcmd="$runcmd -dc $dc_name"
+          fi
+
+          #Добавляем перезагрузку к собранной команде
+          runcmd="$runcmd && shutdown -r +1"
+
+          #Выполнение команды
+          eval "$runcmd"
+
+        else
+          echo "Проверьте заполнение обязательных параметров (имя домена; имя администратора)"
+          return 1
+        fi
+      else
+        echo "Блок ввода в домен пропущен"
+      fi
+    else
+      echo "$(astra-ad-sssd-client -i)"
+
+      if [[ "$exit_domain" -eq "1" ]]; then
+        echo "Запущен блок вывода устройства из домена"
+
+        if [[ -n "$admin_name" ]]; then
+          astra-ad-sssd-client -U -u "$admin_name" && shutdown -r +1
+        else
+          echo "Не заполнено имя администратора"
+          return 1
+        fi
+      else
+        echo "Блок вывода устройства из домена пропущен"
+      fi
+    fi
+  else
+    echo "astra-ad-sssd-client не найден"
+    return 1
+  fi
+}
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  astra_comp_input_ad
+else
+  echo "Требуются права root для выполнения скрипта"
+  exit 1
+fi

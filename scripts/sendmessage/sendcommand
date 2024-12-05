@@ -1,0 +1,58 @@
+#!/bin/bash
+
+#Укажите в кавычках имя скрипта
+namescript="Рассылка сообщения (Требуются root права)"
+
+#Версия скрипта
+let scriptversion=1
+
+#Список файлов, которые необходимо отправить из каталога sendfunc
+list_source_func=('func_main.sh')
+
+#Подключение переданных файлов list_source_func
+if [[ "${#list_source_func[@]}" -gt "0" ]]; then
+
+  for ((num_list_func = 0; num_list_func < ${#list_source_func[@]}; num_list_func++)); do
+
+    if [[ -f "$(dirname "$(realpath "$0")")/${list_source_func[$num_list_func]}" ]]; then
+      source "$(dirname "$(realpath "$0")")/${list_source_func[$num_list_func]}"
+    else
+      echo "Файл (${list_source_func[$num_list_func]}) не найден"
+      exit 1
+    fi
+  done
+fi
+
+#Разместите ниже код вашего скрипта
+
+echo "Имя хоста"
+hostname
+echo ""
+
+#Вывод сообщения через notify-send (0 - отключить, 1 - включить)
+let send_notifysend=0
+
+#Вывод сообщения через fly-dialog (0 - отключить, 1 - включить)
+let send_flydialog=0
+
+#Вывод сообщения через zenity (0 - отключить, 1 - включить)
+let send_zenity=0
+
+#Вывод сообщения от имени пользователя или root (0 - от пользователя, 1 - от root)
+let send_msg_use_root=0
+
+#Тип ввода сообщения: file (необходимо отправить файл с текстом) и text (добавьте текст в массив msgtext)
+typesend="file"
+
+#Текст сообщения для показа (Если выбран тип ввода сообщения 'text' в typesend)
+msgtext=()
+
+#Добавьте имена пользователей в массив, если необходимо показать сообщение только им (поиск всех активных пользователей будет пропущен)
+activeusername=()
+
+#Заголовок сообщения (Если не заполнен, то используется заданное по умолчанию значение)
+headertext=
+
+send_message_active_users
+
+#Конец кода вашего скрипта

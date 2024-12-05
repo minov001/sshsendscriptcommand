@@ -1,0 +1,85 @@
+#!/bin/bash
+
+#Завершить выполнение скрипта в случае ошибки
+set -e
+
+#Укажите в кавычках имя скрипта
+namescript="Установка/Переустановка/Удаление пакетов"
+
+#Версия скрипта
+let scriptversion=1
+
+#Разместите ниже код вашего скрипта
+
+echo "Имя хоста"
+hostname
+echo ""
+
+#Список пакетов на установку/переустановку
+listpkginst=""
+
+#Список пакетов на удаление
+listpkgremove=""
+
+#Выполнить установку пакетов через apt (1 - выполнить, 0 - не выполнять)
+let aptinst=0
+
+#Выполнить установку пакетов через dpkg (1 - выполнить, 0 - не выполнять)
+let dpkginst=0
+
+#Выполнить переустановку пакетов через apt (1 - выполнить, 0 - не выполнять)
+let aptreinst=0
+
+#Выполнить удаление пакетов через apt (1 - выполнить, 0 - не выполнять)
+let aptremove=0
+
+#Выполнить полное удаление пакетов через apt (1 - выполнить, 0 - не выполнять)
+let aptfullremove=0
+
+function main {
+  if [[ "$aptinst" -eq "1" ]] || [[ "$aptreinst" -eq "1" ]] || [[ "$aptremove" -eq "1" ]] || [[ "$aptfullremove" -eq "1" ]]; then
+    if [[ -n "$(which apt 2>/dev/null)" ]]; then
+      if [[ -n "$listpkginst" ]]; then
+        if [[ "$aptinst" -eq "1" ]]; then
+          apt -y install $listpkginst
+        fi
+        if [[ "$aptreinst" -eq "1" ]]; then
+          apt -y reinstall $listpkginst
+        fi
+      else
+        echo "Список пакетов на установку/переустановку пуст"
+      fi
+      if [[ -n "$listpkgremove" ]]; then
+        if [[ "$aptremove" -eq "1" ]]; then
+          apt -y remove $listpkgremove
+        fi
+        if [[ "$aptfullremove" -eq "1" ]]; then
+          apt -y purge $listpkgremove
+        fi
+      else
+        echo "Список пакетов на удаление пуст"
+      fi
+    else
+      echo "apt не найден"
+    fi
+  fi
+
+  if [[ "$dpkginst" -eq "1" ]]; then
+    if [[ -n "$(which dpkg 2>/dev/null)" ]]; then
+      if [[ -n "$(ls -1 "$dirfiles" | grep '.deb$')" ]]; then
+        dpkg -i "$dirfiles/"*.deb
+      fi
+    else
+      echo "dpkg не найден"
+    fi
+  fi
+  echo ""
+}
+
+if [ "$(id -u)" -eq 0 ]; then
+  main
+else
+  echo "Требуются права root для выполнения скрипта"
+fi
+
+#Конец кода вашего скрипта

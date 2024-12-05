@@ -1,0 +1,23 @@
+#!/bin/bash
+
+namescript="Перезагрузка системы (Требуются root права)"
+
+#Версия скрипта
+let scriptversion=1
+
+echo "Имя хоста"
+hostname
+echo ""
+
+function main {
+  shutdown -r +1
+}
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  main
+else
+  echo "Требуются права root для выполнения скрипта"
+  exit 1
+fi
+
+#Конец кода вашего скрипта

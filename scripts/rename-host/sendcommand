@@ -1,0 +1,59 @@
+#!/bin/bash
+
+#Укажите в кавычках имя скрипта
+namescript="Переименовать устройство (Требуются root права)"
+
+#Версия скрипта
+let scriptversion=1
+
+#Разместите ниже код вашего скрипта
+
+#Условие для проверки
+check_hostname='^[A-Za-z0-9.-]+$'
+
+#Значение для изменения имени хоста (Если в домене, то только имя без доменной части. Если не заполнено, будет сгенерировано случайное имя)
+name_host=
+
+#Включить/выключить выполнение переименования (0 - выключить, 1 - включить)
+let exec_rename_host=0
+
+function rename_host {
+  #Выполнить, если включено выполнение переименования
+  if [[ "$exec_rename_host" -eq "1" ]]; then
+
+    #Проверка наличия необходимых исполняемых файлов
+    if [[ -n "$(which hostname 2>/dev/null)" ]] && [[ -n "$(which hostnamectl 2>/dev/null)" ]]; then
+
+      #Определяем имя хоста без доменной части
+      current_hostname="$(hostname | cut -d '.' -f1)"
+
+      #Определяем доменную часть
+      current_domain_name="$(hostname -d)"
+
+      #Формируем новое значение имени хоста. Если name_host соответствует условиям проверки, то используется он, иначе генерируется имя
+      new_hostname="$([[ "$name_host" =~ $check_hostname ]] && echo "$name_host" || echo "lin-$(sed 's/^..//' <<<"$(date +"%Y%m%d")")-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 3)")"
+
+      #Изменить имя хоста. Подставить доменную часть, если не пуста
+      sudo hostnamectl set-hostname "$new_hostname$([[ -n "$current_domain_name" ]] && echo ".$current_domain_name")"
+
+      #Изменить файл hosts
+      sed -i "s/\<$current_hostname\>/$new_hostname/Ig" "/etc/hosts"
+
+      #Перезагрузить устройство
+      shutdown -r +1
+    else
+      echo -e "\nНе найден нужный исполняемый файл: hostname или hostnamectl\n"
+      return 1
+    fi
+  else
+    echo -e "\nВыполнение переименования отключено\n"
+    return 1
+  fi
+}
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  rename_host
+else
+  echo -e "\nТребуются права root для выполнения скрипта\n"
+  exit 1
+fi

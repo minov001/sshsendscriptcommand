@@ -1,0 +1,111 @@
+#!/bin/bash
+
+#Укажите в кавычках имя скрипта
+namescript="Наложение доменных групп на локальные через sss_override (Требуются root права)"
+
+#Версия скрипта
+let scriptversion=1
+
+#Разместите ниже код вашего скрипта
+
+#Список групп: 'доменная группа|локальная группа'
+# Пример: list_name_group=('domain users|users' 'astra-admin|astra-admin' 'astra-console|astra-console' 'audio|audio' 'cdrom|cdrom' 'dialout|dialout' 'dip|dip' 'floppy|floppy' 'lpadmin|lpadmin' 'netdev|netdev' 'plugdev|plugdev' 'scanner|scanner' 'video|video')
+list_name_group=()
+
+#Имя домена. Если оставить пустым, то вычислиться командой hostname -d
+domain_name=
+
+#Файл конфигурации SSSD
+conf_sssd="/etc/sssd/sssd.conf"
+
+#Если sss_override найден, то продолжается выполнение
+if [[ -n "$(which sss_override 2>/dev/null)" ]]; then
+
+  function domaingroup_in_local {
+    if [[ "${#list_name_group[@]}" -gt "0" ]]; then
+
+      #Если domain_name пуст, то вычисляем значение на основе имени хоста
+      if [[ -z "$domain_name" ]]; then
+        domain_name="$(hostname -d)"
+      fi
+
+      #Если domain_name не пуст, то продолжаем выполнение
+      if [[ -n "$domain_name" ]]; then
+
+        #Определение есть ли в файле конфигурации SSSD секция домена
+        section_use_domain="$(cat "$conf_sssd" | grep '^\[.*\]$' | awk -F'[][]' '{print $2}' | grep -i "domain/$domain_name" | sed 's/\//\\\//g')"
+
+        #Если секция найдена, то продолжается выполнение
+        if [[ -n "$section_use_domain" ]]; then
+          echo "Секция домена в файле конфинурации найдена"
+
+          domain_name="$(echo "$section_use_domain" | cut -d '/' -f 2)"
+
+          echo "ПК подключен к домену $domain_name"
+
+          #Определение имени следующей за section_use_domain секции. Если section_use_domain это последняя секция, то поиск в следующей команде будет произведен до конца файла, иначе будет действовать диапозон поиска в рамках одной секции
+          nextsection="$(cat "$conf_sssd" | grep '^\[.*\]$' | awk -F'[][]' '{print $2}' | sed -n "/$section_use_domain/,+1 p" | tail -1 | sed 's/\//\\\//g')"
+
+          #Ищем значение параметра use_fully_qualified_names в файле конфигурации
+          status_use_full_name="$(sed -nr "/^\[$section_use_domain\]/,/^\[$nextsection\]/p" "$conf_sssd" | sed -nr "{ :l /^use_fully_qualified_names[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
+
+          #Формирование команды выполнения. Если полные имена включены, то к доменным группам будет добавлено имя домена в название.
+          if [[ -n "$(echo "$status_use_full_name" | grep -i 'True')" ]]; then
+            echo "В файле конфигурации $conf_sssd включено использование полного доменного имени"
+
+            runcmd='sss_override group-add "${list_name_group2[0]}@$domain_name" -n "${list_name_group2[1]}" -g "$(cat "/etc/group" | grep -w "^${list_name_group2[1]}" | cut -d ":" -f 3)"'
+          else
+            echo "В файле конфигурации $conf_sssd не включено использование полного доменного имени"
+
+            runcmd='sss_override group-add "${list_name_group2[0]}" -n "${list_name_group2[1]}" -g "$(cat "/etc/group" | grep -w "^${list_name_group2[1]}" | cut -d ":" -f 3)"'
+          fi
+
+          #Перебор в цикле массива list_name_group
+          for ((m = 0; m < ${#list_name_group[@]}; m++)); do
+
+            #Если не пусто, то продолжается выполнение
+            if [[ -n "${list_name_group[$m]}" ]]; then
+
+              #Формируем новый массив в котором должно быть 2 значения
+              readarray -d '|' -t list_name_group2 < <(echo "${list_name_group[$m]}" | tr -d '\n')
+
+              #Если первое и второе значение массива list_name_group2 не пусты, то продолжается выполнение
+              if [[ -n "${list_name_group2[0]}" && -n "${list_name_group2[1]}" ]]; then
+
+                #Если группа найдена в системе, то запускается выполнение команды, иначе сначала будет попытка создать несистемную группу с указанным именем
+                if [[ -n "$(cat "/etc/group" | grep -w "^${list_name_group2[1]}" | cut -d ':' -f 1)" ]]; then
+                  echo "Настройка доменной группы ${list_name_group2[0]}"
+                  eval "$runcmd"
+                else
+                  echo "Локальная группа ${list_name_group2[1]} не найдена.
+Выполняется создание локальной несистемной группы и настройка доменной группы ${list_name_group2[0]}."
+                  groupadd "${list_name_group2[1]}" && eval "$runcmd"
+                fi
+              fi
+            fi
+          done
+        else
+          echo "Не найдена секция домена в конфигурации sssd"
+          return 1
+        fi
+      else
+        echo "ПК не подключен к домену"
+        return 1
+      fi
+    else
+      echo "Массив list_name_group пуст"
+      return 1
+    fi
+  }
+
+  #Если скрипт запущен не от root, то выдаст ошибку
+  if [[ "$(id -u)" -eq "0" ]]; then
+    domaingroup_in_local
+  else
+    echo -e "\nТребуются права root для выполнения скрипта\n"
+    exit 1
+  fi
+else
+  echo -e "\nsss_override не обнаружен\n"
+  exit 1
+fi
