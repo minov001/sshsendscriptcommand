@@ -2380,8 +2380,8 @@ numportssh=\"$numportssh\"
 typesendfiles=\"$typesendfiles\"
 typesend=\"$typesend\"
 list_ipall=($(echo ${list_ip[$i]}))
-listIgnoreInaccurate=($(echo "${listIgnoreInaccurate[@]/%/$'\''}" | sed "s/' /' '/g" | sed "s/^/'/"))
-listIgnoreAccurate=($(echo "${listIgnoreAccurate[@]/%/$'\''}" | sed "s/' /' '/g" | sed "s/^/'/"))
+listIgnoreInaccurate=($([[ "${#listIgnoreInaccurate[@]}" -gt "0" ]] && echo "${listIgnoreInaccurate[@]/%/$'\''}" | sed "s/' /' '/g" | sed "s/^/'/"))
+listIgnoreAccurate=($([[ "${#listIgnoreAccurate[@]}" -gt "0" ]] && echo "${listIgnoreAccurate[@]/%/$'\''}" | sed "s/' /' '/g" | sed "s/^/'/"))
 list_param_send_script=($(echo "${list_param_send_script[@]/%/$'\''}" | sed "s/' /' '/g" | sed "s/^/'/"))
 remotedirrunscript=\"$remotedirrunscript\"
 value_date=\"$value_date\"
@@ -2433,6 +2433,8 @@ rm -f -v \"\$0\"" >"$trfs/$i-$session"
     if [[ "$console_or_multiplexer" -eq "0" ]]; then
       wait
       delsendfiles
+
+      multisend_exec_info_in_one_file
       echo -e "\n${GREEN}Выполнение завершено $NoColor\n"
     else
       #Ожидаем завершения сессии tmux/screen
@@ -2458,11 +2460,124 @@ rm -f -v \"\$0\"" >"$trfs/$i-$session"
 
       #Удаляем файлы
       delsendfiles
+
+      multisend_exec_info_in_one_file
       echo -e "\n${GREEN}Выполнение завершено $NoColor\n"
     fi
   fi
 
   unset_send_values
+}
+
+#Сбор финальной информации о выполнении при многопоточной отправке в один файл
+function multisend_exec_info_in_one_file {
+  echo -e "\n${GREEN}Запущена обработка log файлов$NoColor\n"
+
+  #Каталог лог файлов при многопоточной отправке
+  sendlogs="$dir_logs/${value_date}_$(echo "${list_param_send_script[0]}" | cut -d ';' -f 1)_${#list_param_send_script[@]}"
+
+  mkdir -p "$sendlogs"
+
+  echo -e "Общая информация о выполнении\n" >>"$sendlogs/all-sendinfo.txt"
+
+  let sum_num_devices_access=0
+
+  if [[ -f "$sendlogs/tmp-sum_devices" ]]; then
+    temp_massive_values=($(cat "$sendlogs/tmp-sum_devices" | grep -Ev '^$'))
+    rm -f "$sendlogs/tmp-sum_devices"
+
+    for ((num_value = 0; num_value < ${#temp_massive_values[@]}; num_value++)); do
+      let sum_num_devices_access+=${temp_massive_values[$num_value]}
+    done
+
+    unset temp_massive_values
+  fi
+
+  if [[ -f "$sendlogs/tmp-successful_exec_script" ]]; then
+    echo -e "${GREEN}Успешное выполнение (Записей в списке: $(wc -l <"$sendlogs/tmp-successful_exec_script")$([[ "${#list_param_send_script[@]}" -eq "1" ]] && echo "; Доступно устройств: $sum_num_devices_access")): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+
+    cat "$sendlogs/tmp-successful_exec_script" | sort >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+    rm -f "$sendlogs/tmp-successful_exec_script"
+  else
+    echo -e "${GREEN}Успешное выполнение (Записей в списке: 0$([[ "${#list_param_send_script[@]}" -eq "1" ]] && echo "; Доступно устройств: $sum_num_devices_access")): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+  fi
+
+  if [[ -f "$sendlogs/tmp-successful_exec_full_scripts" ]]; then
+    echo -e "${GREEN}Успешное выполнение всех отправленных скриптов (Записей в списке: $(wc -l <"$sendlogs/tmp-successful_exec_full_scripts"); Доступно устройств: $sum_num_devices_access): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+
+    cat "$sendlogs/tmp-successful_exec_full_scripts" | sort >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+    rm -f "$sendlogs/tmp-successful_exec_full_scripts"
+  else
+    if [[ "${#list_param_send_script[@]}" -gt "1" ]]; then
+      echo -e "${GREEN}Успешное выполнение всех отправленных скриптов (Записей в списке: 0; Доступно устройств: $sum_num_devices_access): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+      echo "" >>"$sendlogs/all-sendinfo.txt"
+    fi
+  fi
+
+  if [[ -f "$sendlogs/tmp-skip_host" ]]; then
+    echo -e "${YELLOW}Пропущенные устройства (Записей в списке: $(wc -l <"$sendlogs/tmp-skip_host"); Доступно устройств: $sum_num_devices_access): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+
+    cat "$sendlogs/tmp-skip_host" | sort >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+    rm -f "$sendlogs/tmp-skip_host"
+  else
+    echo -e "${YELLOW}Пропущенные устройства (Записей в списке: 0; Доступно устройств: $sum_num_devices_access): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+  fi
+
+  if [[ -f "$sendlogs/tmp-failed_scripts" ]]; then
+    echo -e "${RED}Выполнение с ошибкой (Записей в списке: $(wc -l <"$sendlogs/tmp-failed_scripts")$([[ "${#list_param_send_script[@]}" -eq "1" ]] && echo "; Доступно устройств: $sum_num_devices_access")): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+
+    cat "$sendlogs/tmp-failed_scripts" | sort >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+    rm -f "$sendlogs/tmp-failed_scripts"
+  else
+    echo -e "${RED}Выполнение с ошибкой (Записей в списке: 0$([[ "${#list_param_send_script[@]}" -eq "1" ]] && echo "; Доступно устройств: $sum_num_devices_access")): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+  fi
+
+  if [[ -f "$sendlogs/tmp-devices_err_exec_scripts" ]]; then
+    echo -e "${RED}Устройства с ошибками (Записей в списке: $(wc -l <"$sendlogs/tmp-devices_err_exec_scripts"); Доступно устройств: $sum_num_devices_access): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+
+    cat "$sendlogs/tmp-devices_err_exec_scripts" | sort >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+    rm -f "$sendlogs/tmp-devices_err_exec_scripts"
+  else
+    if [[ "${#list_param_send_script[@]}" -gt "1" ]]; then
+      echo -e "${RED}Устройства с ошибками (Записей в списке: 0; Доступно устройств: $sum_num_devices_access): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+      echo "" >>"$sendlogs/all-sendinfo.txt"
+    fi
+  fi
+
+  if [[ -f "$sendlogs/tmp-failed_conn" ]]; then
+    echo -e "${RED}Устройства к которым нет доступа (Записей в списке: $(wc -l <"$sendlogs/tmp-failed_conn")): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+
+    cat "$sendlogs/tmp-failed_conn" | sort >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+    rm -f "$sendlogs/tmp-failed_conn"
+  else
+    echo -e "${RED}Устройства к которым нет доступа (Записей в списке: 0): $NoColor" >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+  fi
+
+  unset sum_num_devices_access
+
+  cat "$sendlogs/all-sendinfo.txt"
+
+  echo -e "\nИнформация по каждому потоку\n" >>"$sendlogs/all-sendinfo.txt"
+
+  for file_log in $(ls -1 "$sendlogs" | grep "^sssc"); do
+    echo -e "Файл $file_log\n" >>"$sendlogs/all-sendinfo.txt"
+    cat "$sendlogs/$file_log" | sed -nr "/^-----Информация/,/^-----Конец информации/p" >>"$sendlogs/all-sendinfo.txt"
+    echo "" >>"$sendlogs/all-sendinfo.txt"
+  done
+
+  unset file_log
+
+  echo -e "${GREEN}Обработка log файлов завершена$NoColor"
 }
 
 #Удаление переменных
@@ -2517,50 +2632,44 @@ function unset_send_values {
   unset type_find_hosts
   unset exec_descriptor
   unset filename_PIPE
+  unset num_descriptior
 }
 
 #Запуск отправки, в зависимости от количества потоков, для обеспечения логирования
 function runsend {
-  let status_descriptor=0
   unset exec_descriptor
   unset filename_PIPE
+  unset num_descriptior
 
-  #Если подключение по паролю, то создаем дескриптор
+  #Если подключение по паролю
   if [[ "$sshtypecon" = "pas" ]]; then
     #Записываем в переменную номера всех активных дескрипторов процесса
     exec_descriptor="$(ls -1 /proc/$$/fd/)"
 
-    #Ищем первый свободный номер для нового дескриптора
-    for ((num_descriptior = 0; num_descriptior < 255; num_descriptior++)); do
+    #Ищем первый свободный номер, начиная с 10, для нового дескриптора
+    for ((num_descriptior = 10; num_descriptior < 255; num_descriptior++)); do
 
-      #Если пусто, т.е. найден свободный номер для дескриптора, то выходим из цикла
-      if [[ -z "$(grep "^$num_descriptior$" <<<"$exec_descriptor")" ]]; then
-        let status_descriptor=1
+      #Если найден свободный номер для дескриптора, то выходим из цикла
+      if [[ "$(grep "^$num_descriptior$" <<<"$exec_descriptor" | wc -l)" -eq "0" ]]; then
         break
+      else
+        #Если не найден и это последний круг цикла, удаляем переменную и выходим из цикла
+        if [[ "$num_descriptior" -eq "254" ]]; then
+          unset num_descriptior
+          break
+        fi
       fi
     done
-
-    unset exec_descriptor
-
-    #Записываем в переменную путь к файлу
-    filename_PIPE="$temp_dir_send_script/$(basename "$(mktemp -u)")"
-
-    #Создаем канал c правами 600
-    mkfifo -m 600 "$filename_PIPE"
-
-    #Создаем дескриптор
-    exec {num_descriptior}<>"$filename_PIPE"
-
-    #Удаляем файл
-    rm -f "$filename_PIPE"
   fi
 
-  if [[ "$status_descriptor" -eq "1" ]] || [[ "$sshtypecon" = "key" ]]; then
+  #Продолжаем, если номер дескриптора является числом или подключение по ключу
+  if [[ "$num_descriptior" =~ $check_num ]] || [[ "$sshtypecon" = "key" ]]; then
+
     if [[ "$multisend" -eq "1" ]]; then
       #Имя лог файла для однопоточной отправки
       logfile="$(date +"%Y.%m.%d-%H%M%S")_$(echo "${list_param_send_script[0]}" | cut -d ';' -f 1)_${#list_param_send_script[@]}"
 
-      echo "Дата $(date +"%Y.%m.%d %H:%M:%S")" >>"$dir_logs/$logfile"
+      echo "Начало выполнения: ($(date +"%Y.%m.%d %H:%M:%S"))" >>"$dir_logs/$logfile"
 
       sshsendscript 2>&1 | tee -a "$dir_logs/$logfile"
     else
@@ -2569,11 +2678,16 @@ function runsend {
 
       mkdir -p "$sendlogs"
 
+      echo "Начало выполнения: ($(date +"%Y.%m.%d %H:%M:%S"))" >>"$sendlogs/$namescript"
+
       sshsendscript 2>&1 | tee -a "$sendlogs/$namescript"
     fi
 
-    if [[ "$status_descriptor" -eq "1" ]]; then
+    #Удаляем дескриптор, если num_descriptior является числом
+    if [[ "$num_descriptior" =~ $check_num ]]; then
       exec {num_descriptior}>&-
+      unset num_descriptior
+      unset exec_descriptor
     fi
   fi
 }
@@ -2611,9 +2725,33 @@ function sshsendscript {
 
   #Помещаем пароль в созданный дескриптор. Выполняется перед ssh подключением, если подключение по паролю
   function pas_to_descriptor {
-    if [[ "$status_descriptor" -eq "1" ]]; then
+    if [[ $- =~ x ]] && [[ "$ssscdebugmode" -ne "1" ]]; then
+      debug=1
+      set +x
+    fi
+
+    #Выполнить, если подключение по паролю
+    if [[ "$sshtypecon" = "pas" ]]; then
+      unset filename_PIPE
+
+      #Записываем в переменную путь к файлу
+      filename_PIPE="$temp_dir_send_script/$(basename "$(mktemp -u)")"
+
+      #Создаем канал c правами 600
+      mkfifo -m 600 "$filename_PIPE"
+
+      #Создаем дескриптор
+      exec {num_descriptior}<>"$filename_PIPE"
+
+      #Удаляем файл
+      rm -f "$filename_PIPE"
+
+      unset filename_PIPE
+
       base64 -d <<<"$cspas" >&$num_descriptior
     fi
+
+    [[ $debug == 1 ]] && set -x && unset debug
   }
 
   function create_list_failed {
@@ -2716,7 +2854,9 @@ function sshsendscript {
 
       #Если список ip не пуст, то запускаем выполнение
       for ((i = 0; i < ${#list_ipall[@]}; i++)); do
-        echo -e "\n---------------"
+        echo -e "\n---------------\n"
+
+        echo "Дата: ($(date +"%Y.%m.%d %H:%M:%S"))"
 
         let successful_run=0
 
@@ -3064,11 +3204,41 @@ function sshsendscript {
 
       echo ""
 
-      echo -e "${RED}Устройства к которым нет доступа (количество: ${#list_failed_conn[@]}): $NoColor"
+      echo -e "${RED}Устройства к которым нет доступа (Записей в списке: ${#list_failed_conn[@]}): $NoColor"
       echo "${list_failed_conn[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$'
 
       echo -e "\n-----Конец информации о подключении к устройствам-----\n"
 
+      if [[ "$multisend" -gt "1" ]]; then
+
+        if [[ "${#list_successful_exec_script[@]}" -gt "0" ]]; then
+          echo "${list_successful_exec_script[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-successful_exec_script"
+        fi
+
+        if [[ "${#list_successful_exec_full_scripts[@]}" -gt "0" ]]; then
+          echo "${list_successful_exec_full_scripts[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-successful_exec_full_scripts"
+        fi
+
+        if [[ "${#list_skip_host[@]}" -gt "0" ]]; then
+          echo "${list_skip_host[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-skip_host"
+        fi
+
+        if [[ "${#list_failed_scripts[@]}" -gt "0" ]]; then
+          echo "${list_failed_scripts[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-failed_scripts"
+        fi
+
+        if [[ "${#list_devices_err_exec_scripts[@]}" -gt "0" ]]; then
+          echo "${list_devices_err_exec_scripts[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-devices_err_exec_scripts"
+        fi
+
+        if [[ "${#list_failed_conn[@]}" -gt "0" ]]; then
+          echo "${list_failed_conn[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-failed_conn"
+        fi
+
+        if [[ "$num_devices_access" -gt "0" ]]; then
+          echo "$num_devices_access" >>"$sendlogs/tmp-sum_devices"
+        fi
+      fi
     else
       echo "Версия SSH на локальном устройстве не определена"
     fi

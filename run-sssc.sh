@@ -26,7 +26,7 @@ chmod -R 700 "$dir_runscript"
 #Проверка существования, хеш-суммы и подключение файла с функциями
 if [[ -f "$dir_runscript/func.sh" ]]; then
 
-  if [[ "$(sha1sum "$dir_runscript/func.sh" | cut -d ' ' -f 1)" = "3800e2cd7df56f6ee940ddba000d37e47e8ba0a5" ]]; then
+  if [[ "$(sha1sum "$dir_runscript/func.sh" | cut -d ' ' -f 1)" = "2a0afaa94249bd581a50067a07dd095066601f9f" ]]; then
     source func.sh
   else
     echo -e "\n${RED}Хеш-сумма файла func.sh не совпадает. Файл поврежден или не соответствует версии скрипта. $NoColor"
