@@ -2,6 +2,7 @@
 
 #Условие для проверки
 check_path='^[A-Za-zА-Яа-я0-9(),./@_[:space:]-]+$'
+hash_file_version="186cf56dbc8e6a0dcb6dbb80be0da80b62c883e7"
 
 #Переменные цветов
 RED='\033[0;91m'
@@ -26,7 +27,7 @@ chmod -R 700 "$dir_runscript"
 #Проверка существования, хеш-суммы и подключение файла с функциями
 if [[ -f "$dir_runscript/func.sh" ]]; then
 
-  if [[ "$(sha1sum "$dir_runscript/func.sh" | cut -d ' ' -f 1)" = "2a0afaa94249bd581a50067a07dd095066601f9f" ]]; then
+  if [[ "$(sha1sum "$dir_runscript/func.sh" | cut -d ' ' -f 1)" = "4b924bb2b223a60c210b4976493184ec6d9067f8" ]]; then
     source func.sh
   else
     echo -e "\n${RED}Хеш-сумма файла func.sh не совпадает. Файл поврежден или не соответствует версии скрипта. $NoColor"
@@ -71,7 +72,7 @@ if [[ "$status_check" -ne "0" ]]; then
 fi
 
 #Список исполняемых файлов для проверки наличия в системе (имена с условием 'или' прописывается через вертикальную черту, например, 'tmux|screen')
-list_value_check=('nmap' 'sshpass' 'gpg2' 'awk' 'sed' 'grep' 'tmux|screen' 'zenity' 'ssh' 'scp|rsync' 'ls' 'cut' 'rev' 'cat')
+list_value_check=('nmap' 'sshpass' 'gpg2' 'awk' 'sed' 'grep' 'tmux|screen' 'zenity' 'ssh' 'scp|rsync' 'ls' 'cut' 'rev' 'cat' 'dialog' 'curl')
 
 check_type="execfiles"
 
@@ -87,7 +88,7 @@ if [[ "$status_check" -ne "0" ]]; then
 
   if [[ "$ynaction" = "yes" ]]; then
     #Массив имен пакетов (имена с условием 'или' прописывается через вертикальную черту, например, 'gnupg2|gnupg2-gostcrypto')
-    list_names_pkg=('nmap' 'sshpass' 'gnupg2|gnupg2-gostcrypto' 'gawk' 'sed' 'grep' 'tmux' 'screen' 'zenity' 'openssh-client|openssh-clients' 'rsync')
+    list_names_pkg=('nmap' 'sshpass' 'gnupg2|gnupg2-gostcrypto' 'gawk' 'sed' 'grep' 'tmux' 'screen' 'zenity' 'openssh-client|openssh-clients' 'rsync' 'dialog' 'curl')
 
     #Переменной select_package_management можно заранее присвоить имя используемой системы управления из доступных для использования
     #select_package_management=""
@@ -261,6 +262,101 @@ let max_num_values=100
 #Вывод значений массива столбцами
 splitting_list_massive
 
+#Ссылка на репозиторий
+link_git_repo='https://gitflic.ru/project/medved0001/sshsendscriptcommand'
+
+#Выполняется, если не отключена проверка обновлений
+if [[ "$no_check_update_script" -eq "0" ]]; then
+
+  #Путь к файлу для сохранения ответа от сервера (нужно для дальнейшей проверки, что данные получены успешно, т.е. получен код ответа 200)
+  file_http_status="$dir_temp/repostatus_$(date +"%Y%m%d-%H%M%S")_$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 3)"
+
+  unset list_remote_version
+
+  #Записываем данные по ссылке в массив
+  list_remote_version=($(curl -D "$file_http_status" -f "$link_git_repo/blob/raw?file=version&inline=false" 2>/dev/null))
+
+  #Продолжаем, если код ответа 200
+  if [[ -s "$file_http_status" ]] && [[ "$(cat "$file_http_status" | awk '/^HTTP/{print $2}')" -eq "200" ]]; then
+
+    #Удаление файла с ответом от сервера
+    rm -f "$file_http_status"
+
+    #Сравнение версий текущего скрипта с версией в репозитории
+    if [[ "${list_remote_version[0]}" -gt "$script_current_version" ]]; then
+      echo -e "\nДоступна новая версия скрипта SSSC: ${GREEN}${list_remote_version[0]} $NoColor"
+    else
+      echo -e "\nНет обновлений скрипта SSSC"
+    fi
+
+    #Выполняется, если файл version существует
+    if [[ -f "$dir_runscript/version" ]]; then
+
+      #Выполняется, если хеш-сумма совпадает
+      if [[ "$(sha1sum "$dir_runscript/version" | cut -d ' ' -f 1)" = "$hash_file_version" ]]; then
+        list_local_version=($(cat "$dir_runscript/version"))
+
+        #Перебираем строки из массива, начиная с 1
+        for ((sv = 1; sv < ${#list_local_version[@]}; sv++)); do
+
+          #Запись имени скрипта в переменную
+          temp_check_value="$(echo "${list_local_version[$sv]}" | cut -d ";" -f 1)"
+
+          #Если значения нет в массиве list_remote_version, значит скрипт удален из репозитория
+          if [[ -z "$(printf '%s\n' "${list_remote_version[@]}" | grep "^$temp_check_value;")" ]]; then
+            echo -e "\nСкрипт удален из репозитория: $temp_check_value"
+          fi
+        done
+
+        unset temp_check_value
+
+        #Перебираем строки из массива, начиная с 1
+        for ((sv = 1; sv < ${#list_remote_version[@]}; sv++)); do
+
+          #Запись имени скрипта в переменную
+          temp_check_value="$(echo "${list_remote_version[$sv]}" | cut -d ";" -f 1)"
+
+          #Если значения нет в массиве list_local_version, значит скрипт добавлен в репозиторий
+          if [[ -z "$(printf '%s\n' "${list_local_version[@]}" | grep "^$temp_check_value;")" ]]; then
+            echo -e "\nДобавлен новый скрипт в репозиторий: $temp_check_value"
+          else
+            #Запись версии скрипта в переменную
+            temp_check_remote_version="$(echo "${list_remote_version[$sv]}" | cut -d ";" -f 2)"
+            temp_check_local_version="$(printf '%s\n' "${list_local_version[@]}" | grep "^$temp_check_value;" | cut -d ";" -f 2)"
+
+            if [[ "$temp_check_remote_version" -gt "$temp_check_local_version" ]]; then
+              echo -e "\nДоступно обновление скрипта $temp_check_value: $(echo "$temp_check_remote_version" | sed -r -e "s/^.{$(expr ${#temp_check_remote_version} - 2)}/&_/")"
+            fi
+          fi
+        done
+
+      else
+        echo -e "\nХеш-сумма файла version не совпадает.
+Проверка версий отправляемых скриптов пропущена\n"
+      fi
+    else
+      echo -e "\nНе найден файл version.
+Проверка версий отправляемых скриптов пропущена\n"
+    fi
+  else
+    echo -e "\nНе удалось проверить наличие обновлений. Репозиторий $link_git_repo не доступен\n"
+    rm -f "$file_http_status"
+  fi
+else
+  echo -e "\nПроверка наличия обновлений отключена.
+Вручную проверить обновления можно по ссылке: $link_git_repo \n"
+fi
+
+unset link_git_repo
+unset file_http_status
+unset list_remote_version
+unset list_local_version
+unset temp_check_remote_version
+unset temp_check_local_version
+unset sv
+unset temp_check_value
+
+echo ""
 echo "Версия SSH: $(ssh -V 2>&1 | sed 's/OpenSSH_\([0-9]*\+\.\+[0-9]*\).*/\1/')"
 
 #Если скрипт запущен из терминала с переданными параметрами, то запускается подготовка файлов, иначе запускается интерактивное выполнение

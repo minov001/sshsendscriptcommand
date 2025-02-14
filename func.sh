@@ -1,5 +1,7 @@
 #!/bin/bash
 
+script_current_version="2025013001"
+
 #Каталог логов, каталог временных файлов, каталог конфигураций, каталог отправляемых функций
 dir_logs="$dir_runscript/logs"
 dir_temp="$dir_runscript/temp"
@@ -843,10 +845,62 @@ function check_or_select_use_section_settings {
   check_settings
 }
 
+#Ввод текстового значения через zenity
+function input_text_zenity {
+  zenity --title="$title_msg" --entry --text="$text_msg" 2>/dev/null
+}
+
+#Подфункция для выбора через select (для уменьшения команды eval)
+function subfunc_select_use_value {
+  if [[ "$REPLY" =~ $check_num ]]; then
+    if [[ "$REPLY" -gt "0" ]] && [[ "$REPLY" -le "${#templist_selectvalue[@]}" ]]; then
+      let status_exec_select=1
+    fi
+  fi
+}
+
+#Выбор значения через select
+function select_use_value {
+  #Вызываем select через eval для подстановки имени переменной. Напрямую нельзя выполнить select $name_variable. Когда status_exec_select будет равен 1, то прерываем select
+  eval "let status_exec_select=0
+select $name_variable in \"\${templist_selectvalue[@]}\"; do
+subfunc_select_use_value
+[[ \"\$status_exec_select\" -eq \"1\" ]] && break
+done
+unset status_exec_select"
+}
+
+#Выбор значения через zenity
+function select_use_value_zenity {
+  zenity --list --title="$title_msg" --text="$text_msg" --column="0" "${templist_selectvalue[@]}" --width=250 --height=200 --hide-header 2>/dev/null
+}
+
 #Считывание и проверка настроек
 function check_settings {
   #Определение имени секции, которая следует за выбранной. В случае если выбрана последняя секция, то имя будет тоже
   nextsection="$(cat "$dir_conf/sssc.conf" | tail -n +2 | grep '^\[.*\]$' | awk -F'[][]' '{print $2}' | sed -n "/$use_section_settings/,+1 p" | tail -1)"
+
+  #Если номер дисплея отсутствует, то exec_no_display=1, иначе определяется значение
+  if [[ -z "$DISPLAY" ]]; then
+    let exec_no_display=1
+    echo -e "\nНомер дисплея не обнаружен. Для запросов будет использоваться dialog вместо zenity (select для выбора из списка)."
+  else
+    exec_no_display="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^exec_no_display[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
+
+    #Если exec_no_display не является числом, то присваивается значение по умолчанию 0
+    if ! [[ "$exec_no_display" =~ $check_num ]]; then
+      let exec_no_display=0
+      echo -e "${YELLOW}Значение exec_no_display пустое или не является числом. Выставлено значение по умолчанию: $exec_no_display $NoColor"
+    fi
+  fi
+
+  no_check_update_script="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^no_check_update_script[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
+
+  #Если no_check_update_script не является числом, то присваивается значение по умолчанию 0
+  if ! [[ "$no_check_update_script" =~ $check_num ]]; then
+    no_check_update_script="0"
+    echo -e "${YELLOW}Значение no_check_update_script пустое или не является числом. Выставлено значение по умолчанию: $no_check_update_script $NoColor"
+  fi
 
   dir_scripts="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^dirscripts[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
 
@@ -929,15 +983,34 @@ function check_settings {
 
   typesendfiles="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^typesendfiles[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
 
+  title_msg="Логин ssh"
+  text_msg="Введите логин для ssh:"
+
   #Если логин не задан в файле настроек и пока переменная пустая, то выведется окно с запросом ввода
   while ! [[ "$logname" =~ $check_login_or_group ]]; do
     echo -e "\n${RED}Логин пуст или содержит недопустимые символы. Введите новое значение. $NoColor"
-    logname="$(zenity --title="Введите логин для ssh" --entry --text="Введите логин для ssh" 2>/dev/null)"
+
+    if [[ "$exec_no_display" -eq "1" ]]; then
+      logname="$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "$title_msg" --inputbox "$text_msg" 18 70)"
+    else
+      logname="$(input_text_zenity)"
+    fi
   done
+
+  title_msg="Тип ssh подключения"
+  text_msg="Выберите тип ssh подключения:"
+  name_variable='sshtypecon'
+  templist_selectvalue=("pas" "key")
 
   #Если параметр типа ssh подключения не соответствует условию, то выдается список с выбором типа подключения
   while [[ "$sshtypecon" != "pas" && "$sshtypecon" != "key" ]]; do
-    sshtypecon="$(zenity --list --title="Тип ssh подключения" --text="Тип ssh подключения" --column="0" "pas" "key" --width=250 --height=200 --hide-header 2>/dev/null)"
+
+    if [[ "$exec_no_display" -eq "1" ]]; then
+      echo -e "\n$text_msg"
+      select_use_value
+    else
+      sshtypecon="$(select_use_value_zenity)"
+    fi
   done
 
   #Если обнаружен debug режим, то он выключается для изоляции от debug идущего далее кода. debug режим будет включен после выполнения, если был отключен условием. Для полного debug вывода, выполните ' export ssscdebugmode="1" ' и запустите debug скрипта
@@ -959,7 +1032,12 @@ function check_settings {
       #Если путь до gpg файла содержит запрещенные символы, пуст или файл не существует, то выведется окно для выбора файла
       while ! [[ "$gpgfilepass" =~ $check_path ]]; do
         echo -e "\n${RED}Путь до gpg файла пуст, содержит запрещенные символы, либо файл не существует. $NoColor"
-        gpgfilepass="$(zenity --file-selection --title="Выберите gpg файл с паролем" 2>/dev/null)"
+
+        if [[ "$exec_no_display" -eq "1" ]]; then
+          gpgfilepass="$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "Выберите gpg файл с паролем" --fselect "/" 10 60)"
+        else
+          gpgfilepass="$(zenity --file-selection --title="Выберите gpg файл с паролем" 2>/dev/null)"
+        fi
       done
     fi
 
@@ -968,7 +1046,11 @@ function check_settings {
 
     #Если пароль от gpg файла не задан в файле настроек и пока переменная пустая, то выведется окно с запросом ввода. Пароль кодируется в base64
     while [[ -z "$gpgpass" ]]; do
-      gpgpass="$(zenity --forms --title="Пароль для дешифровки gpg файла" --text="Пароль для дешифровки gpg файла" --add-password="" 2>/dev/null | tr -d '\n' | base64 -w0)"
+      if [[ "$exec_no_display" -eq "1" ]]; then
+        gpgpass="$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --passwordbox "Введите пароль для дешифровки gpg файла" 10 30 | tr -d '\n' | base64 -w0)"
+      else
+        gpgpass="$(zenity --forms --title="Пароль для дешифровки gpg файла" --text="Пароль для дешифровки gpg файла" --add-password="" 2>/dev/null | tr -d '\n' | base64 -w0)"
+      fi
     done
 
     #Выполняется попытка расшифровки и кодирования в base64. Если полученное значение будет пустым, то скрипт остановится
@@ -988,7 +1070,12 @@ function check_settings {
       sshkeyfile=""
       while ! [[ "$sshkeyfile" =~ $check_path ]]; do
         echo -e "\n${RED}Путь к файлу закрытого ключа ssh пуст, содержит запрещенные символы, либо файл не существует. $NoColor"
-        sshkeyfile="$(zenity --file-selection --title="Выберите файл закрытого ключа ssh" 2>/dev/null)"
+
+        if [[ "$exec_no_display" -eq "1" ]]; then
+          sshkeyfile="$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "Выберите файл закрытого ключа ssh" --fselect "/" 10 60)"
+        else
+          sshkeyfile="$(zenity --file-selection --title="Выберите файл закрытого ключа ssh" 2>/dev/null)"
+        fi
       done
     fi
 
@@ -998,101 +1085,130 @@ function check_settings {
   fi
   [[ $debug == 1 ]] && set -x && unset debug
 
+  title_msg="Путь к каталогу передачи на удаленном компьютере"
+  text_msg="Укажите путь к каталогу передачи на удаленном компьютере (каталог будет создан, если его нет):"
+
   #Если параметр пути к каталогу на удаленном компьютере пуст или не соответствует условию, то выдается окно с запросом
   while ! [[ "$remotedirrunscript" =~ $check_path ]]; do
     echo -e "\n${RED}Путь к каталогу не соответствует условию. Введите новое значение. $NoColor"
-    remotedirrunscript="$(zenity --title="Путь к каталогу на удаленном компьютере" --entry --text="Путь к каталогу передачи на удаленном компьютере (каталог будет создан, если его нет)" 2>/dev/null)"
+
+    if [[ "$exec_no_display" -eq "1" ]]; then
+      remotedirrunscript="$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "$title_msg" --inputbox "$text_msg" 18 70)"
+    else
+      remotedirrunscript="$(input_text_zenity)"
+    fi
   done
+
+  title_msg="Имя группы для назначения прав на каталог"
+  text_msg="Укажите имя группы для назначения прав на каталог (если указанный каталог не существовал):"
 
   #Если параметр имени группы пуст или не соответствует условию, то выдается окно с запросом
   while ! [[ "$remotedirgroup" =~ $check_login_or_group ]]; do
     echo -e "\n${RED}Имя группы не соответствует условию. Введите новое значение. $NoColor"
-    remotedirgroup="$(zenity --title="Имя группы для назначения прав на каталог" --entry --text="Имя группы для назначения прав на каталог (если указанный каталог не существовал)" 2>/dev/null)"
+
+    if [[ "$exec_no_display" -eq "1" ]]; then
+      remotedirgroup="$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "$title_msg" --inputbox "$text_msg" 18 70)"
+    else
+      remotedirgroup="$(input_text_zenity)"
+    fi
   done
 
   #Если skipchangescriptfile не является числом, то будет запрос с выбором
   if ! [[ "$skipchangescriptfile" =~ $check_num ]] || [[ "$skipchangescriptfile" -lt "0" ]] || [[ "$skipchangescriptfile" -gt "1" ]]; then
     skipchangescriptfile=""
 
+    title_msg="Внесение изменений в переменные отправляемого скрипта"
+    text_msg="Пропускать внесение изменений в переменные отправляемого скрипта? (0 - нет, 1 - да):"
+    name_variable='skipchangescriptfile'
+    templist_selectvalue=("0" "1")
+
     while [[ -z "$skipchangescriptfile" ]]; do
-      skipchangescriptfile="$(zenity --list --title="Пропустить внесение изменений в переменные отправляемого скрипта?" --text="Пропустить внесение изменений в переменные отправляемого скрипта?\n0 - нет, 1 - да" --column="0" "0" "1" --width=300 --height=100 --hide-header 2>/dev/null)"
+
+      if [[ "$exec_no_display" -eq "1" ]]; then
+        echo -e "\n$text_msg"
+        select_use_value
+      else
+        skipchangescriptfile="$(select_use_value_zenity)"
+      fi
     done
   fi
 
   #Если логин не root, то проверяется тип повышения прав
   if [[ "$logname" != "root" ]]; then
 
-    #Если sutype не равен sudo, то выдается окно с выбором
+    #Если sutype не равен sudo, то меняем его
     if [[ "$sutype" != "sudo" ]]; then
-      sutype=""
-
-      while [[ -z "$sutype" ]]; do
-        sutype="$(zenity --list --title="Тип повышения прав" --text="Тип повышения прав" --column="0" "sudo" --width=250 --height=200 --hide-header 2>/dev/null)"
-      done
+      sutype="sudo"
     fi
   fi
 
-  #Если typeterminalmultiplexer равен screen или tmux, то проводится проверка существует ли необходимый исполняемый файл в системе. Если необходимого файла нет или значение параметра будет иметь другое значение, то отобразится диалоговое окно с выбором
+  #Если typeterminalmultiplexer не равен screen или tmux, то значение обнуляется.
   if [[ "$typeterminalmultiplexer" != "tmux" && "$typeterminalmultiplexer" != "screen" ]]; then
     typeterminalmultiplexer=""
-
-    while [[ -z "$typeterminalmultiplexer" ]]; do
-      typeterminalmultiplexer="$(zenity --list --title="Тип многооконного терминала" --text="Тип многооконного терминала" --column="0" "screen" "tmux" --width=250 --height=200 --hide-header 2>/dev/null)"
-
-      if [[ -z "$(which "$typeterminalmultiplexer" 2>/dev/null)" ]]; then
-        echo -e "\n${RED}Не найден исполняемый файл $typeterminalmultiplexer. Выберите другой тип $NoColor"
-        typeterminalmultiplexer=""
-      fi
-    done
   fi
 
+  #Если typeterminalmultiplexer равен screen или tmux, то проводится проверка существует ли необходимый исполняемый файл в системе. Если необходимого файла нет, то значение обнуляется
   if [[ "$typeterminalmultiplexer" = "tmux" || "$typeterminalmultiplexer" = "screen" ]]; then
 
     if [[ -z "$(which "$typeterminalmultiplexer" 2>/dev/null)" ]]; then
       echo -e "\n${RED}Не найден исполняемый файл $typeterminalmultiplexer. Выберите другой тип $NoColor"
       typeterminalmultiplexer=""
-
-      while [[ -z "$typeterminalmultiplexer" ]]; do
-        typeterminalmultiplexer="$(zenity --list --title="Тип многооконного терминала" --text="Тип многооконного терминала" --column="0" "screen" "tmux" --width=250 --height=200 --hide-header 2>/dev/null)"
-
-        if [[ -z "$(which "$typeterminalmultiplexer" 2>/dev/null)" ]]; then
-          echo -e "\n${RED}Не найден исполняемый файл $typeterminalmultiplexer. Выберите другой тип $NoColor"
-          typeterminalmultiplexer=""
-        fi
-      done
     fi
   fi
 
-  #Если typesendfiles равен scp или rsync, то проводится проверка существует ли необходимый исполняемый файл в системе. Если необходимого файла нет или значение параметра будет иметь другое значение, то отобразится диалоговое окно с выбором
+  title_msg="Тип многооконного терминала"
+  text_msg="Выберите тип многооконного терминала:"
+  name_variable='typeterminalmultiplexer'
+  templist_selectvalue=("tmux" "screen")
+
+  #Выбор значения пока переменная будет пуста
+  while [[ -z "$typeterminalmultiplexer" ]]; do
+
+    if [[ "$exec_no_display" -eq "1" ]]; then
+      echo -e "\n$text_msg"
+      select_use_value
+    else
+      typeterminalmultiplexer="$(select_use_value_zenity)"
+    fi
+
+    if [[ -z "$(which "$typeterminalmultiplexer" 2>/dev/null)" ]]; then
+      echo -e "\n${RED}Не найден исполняемый файл $typeterminalmultiplexer. Выберите другой тип $NoColor"
+      typeterminalmultiplexer=""
+    fi
+  done
+
+  #Если typesendfiles не равен scp или rsync, то значение обнуляется.
   if [[ "$typesendfiles" != "scp" && "$typesendfiles" != "rsync" ]]; then
     typesendfiles=""
-
-    while [[ -z "$typesendfiles" ]]; do
-      typesendfiles="$(zenity --list --title="Тип многооконного терминала" --text="Тип многооконного терминала" --column="0" "scp" "rsync" --width=250 --height=200 --hide-header 2>/dev/null)"
-
-      if [[ -z "$(which "$typesendfiles" 2>/dev/null)" ]]; then
-        echo -e "\n${RED}Не найден исполняемый файл $typesendfiles. Выберите другой тип $NoColor"
-        typesendfiles=""
-      fi
-    done
   fi
 
+  #Если typesendfiles равен scp или rsync, то проводится проверка существует ли необходимый исполняемый файл в системе. Если необходимого файла нет, то значение обнуляется
   if [[ "$typesendfiles" = "scp" || "$typesendfiles" = "rsync" ]]; then
 
     if [[ -z "$(which "$typesendfiles" 2>/dev/null)" ]]; then
       echo -e "\n${RED}Не найден исполняемый файл $typesendfiles. Выберите другой тип $NoColor"
       typesendfiles=""
-
-      while [[ -z "$typesendfiles" ]]; do
-        typesendfiles="$(zenity --list --title="Тип многооконного терминала" --text="Тип многооконного терминала" --column="0" "scp" "rsync" --width=250 --height=200 --hide-header 2>/dev/null)"
-
-        if [[ -z "$(which "$typesendfiles" 2>/dev/null)" ]]; then
-          echo -e "\n${RED}Не найден исполняемый файл $typesendfiles. Выберите другой тип $NoColor"
-          typesendfiles=""
-        fi
-      done
     fi
   fi
+
+  title_msg="Метод отправки файлов"
+  text_msg="Выберите метод отправки файлов:"
+  name_variable='typesendfiles'
+  templist_selectvalue=("scp" "rsync")
+
+  while [[ -z "$typesendfiles" ]]; do
+    if [[ "$exec_no_display" -eq "1" ]]; then
+      echo -e "\n$text_msg"
+      select_use_value
+    else
+      typesendfiles="$(select_use_value_zenity)"
+    fi
+
+    if [[ -z "$(which "$typesendfiles" 2>/dev/null)" ]]; then
+      echo -e "\n${RED}Не найден исполняемый файл $typesendfiles. Выберите другой тип $NoColor"
+      typesendfiles=""
+    fi
+  done
 
   #Если параметры ниже не являются числом или они меньше или равны 0, то выставляются фиксированные значения по умолчанию
   if ! [[ "$multisend" =~ $check_num ]] || [[ "$multisend" -le "0" ]]; then
@@ -1119,6 +1235,11 @@ function check_settings {
     reboot_time_wait_devaice="10"
     echo -e "${YELLOW}Значение reboot_time_wait_devaice пустое или не является числом. Выставлено значение по умолчанию: $reboot_time_wait_devaice $NoColor"
   fi
+
+  unset title_msg
+  unset text_msg
+  unset name_variable
+  unset templist_selectvalue
 }
 
 #Вывод значений массива столбцами
@@ -1689,9 +1810,12 @@ function changescriptfile {
   unset nextnamevalue
   unset tempparamdesc
   unset tpnvalue
-  unset listvalue
+  unset templist_selectvalue
   unset cmdtempvalue
   unset tempvalue
+
+  PS3="Введите номер: "
+  COLUMNS=1
 
   #Составление списка переменных для изменения из файла script.conf
   readarray -d ';' -t listparamchange < <(cat "$dir_scripts/$namesendscript/script.conf" | sed -r '1,${/(^[[:space:]]*#|^$)/d}' | awk -F'[][]' '{print $2}' | grep -Ev '^$' | tr '\n' ';' | sed -e 's/.$//g')
@@ -1760,9 +1884,17 @@ function changescriptfile {
                     #Если тип ввода 'число'
                     if [[ "$tempparamtype" = "number" ]]; then
 
+                      title_msg="Ввод значения"
+                      text_msg="Введите числовое значение"
+
                       #Вывод запроса пока переменная пуста
                       while [[ -z "$tempvalue" ]]; do
-                        tempvalue="$(zenity --title="Введите значение" --entry --text="Введите значение" 2>/dev/null)"
+
+                        if [[ "$exec_no_display" -eq "1" ]]; then
+                          tempvalue="$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "$title_msg" --inputbox "$text_msg" 18 70)"
+                        else
+                          tempvalue="$(input_text_zenity)"
+                        fi
 
                         #Если введенное значение не является числом, то зануляем переменную
                         if ! [[ "$tempvalue" =~ $check_num ]]; then
@@ -1773,23 +1905,42 @@ function changescriptfile {
 
                     #Если тип ввода 'текст'
                     if [[ "$tempparamtype" = "text" ]]; then
-                      tempvalue="'$(zenity --title="Введите значение" --entry --text="Введите значение" 2>/dev/null | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\\`/g' | sed "s/'/\'\\\\\\\'\'/g")'"
+
+                      title_msg="Ввод значения"
+                      text_msg="Введите текстовое значение"
+
+                      if [[ "$exec_no_display" -eq "1" ]]; then
+                        tempvalue="'$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "$title_msg" --inputbox "$text_msg" 18 70 | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\\`/g' | sed "s/'/\'\\\\\\\'\'/g")'"
+                      else
+                        tempvalue="'$(input_text_zenity | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\\`/g' | sed "s/'/\'\\\\\\\'\'/g")'"
+                      fi
                     fi
 
                     #Если тип ввода 'Список'
                     if [[ "$tempparamtype" = "list" ]]; then
 
-                      unset listvalue
+                      unset templist_selectvalue
 
                       #Формируем список значений для выбора
-                      readarray -d ';' -t listvalue < <(sed -nr "/^\[${listparamchange[i]}\]/,/^\[$nextnamevalue\]/p" "$dir_scripts/$namesendscript/script.conf" | sed -nr "{ :l /^listvalue[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';' | sed -e 's/.$//g')
+                      readarray -d ';' -t templist_selectvalue < <(sed -nr "/^\[${listparamchange[i]}\]/,/^\[$nextnamevalue\]/p" "$dir_scripts/$namesendscript/script.conf" | sed -nr "{ :l /^listvalue[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';' | sed -e 's/.$//g')
 
                       #Продолжаем, если список не пуст
-                      if [[ "${#listvalue[@]}" -gt "0" ]]; then
+                      if [[ "${#templist_selectvalue[@]}" -gt "0" ]]; then
+
+                        title_msg="Выбор значения"
+                        text_msg="Выберите значение из списка:"
+                        name_variable='tempvalue'
 
                         #Вывод запроса пока переменная пуста
                         while [[ -z "$tempvalue" ]]; do
-                          tempvalue="$(zenity --list --title="Выберите значение" --text="Выберите значение" --width=200 --height=200 --hide-header --column="0" "${listvalue[@]}" 2>/dev/null | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\\`/g;s/\$/\\$/g' | sed "s/'/\'\\\\\\\'\'/g")"
+
+                          if [[ "$exec_no_display" -eq "1" ]]; then
+                            echo -e "\n$text_msg"
+                            select_use_value
+                            tempvalue="$(sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\\`/g;s/\$/\\$/g' <<<"$tempvalue" | sed "s/'/\'\\\\\\\'\'/g")"
+                          else
+                            tempvalue="$(select_use_value_zenity | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\\`/g;s/\$/\\$/g' | sed "s/'/\'\\\\\\\'\'/g")"
+                          fi
                         done
 
                         #Добавляем одинарные кавычки
@@ -1805,13 +1956,25 @@ function changescriptfile {
                     if [[ "$tempparamtype" = "massive" ]]; then
                       tempvalue=""
 
+                      title_msg="Ввод значения массива"
+                      text_msg="Введите значение массива:"
+
                       #Запускаем бесконечный цикл
                       while true; do
                         #Добавляем значения в массив
-                        if [[ -z "${tempvalue:0:10}" ]]; then
-                          tempvalue="'$(zenity --title="Введите значение" --entry --text="Введите значение" 2>/dev/null | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\\`/g;s/`/\`/g;s/)/\\)/g;s/(/\\(/g' | sed "s/'/\'\\\\\\\'\'/g")'"
+
+                        if [[ "$exec_no_display" -eq "1" ]]; then
+                          if [[ -z "${tempvalue:0:10}" ]]; then
+                            tempvalue="'$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "$title_msg" --inputbox "$text_msg" 18 70 | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\\`/g;s/`/\`/g;s/)/\\)/g;s/(/\\(/g' | sed "s/'/\'\\\\\\\'\'/g")'"
+                          else
+                            tempvalue="${tempvalue} '$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "$title_msg" --inputbox "$text_msg" 18 70 | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\`/g;s/)/\\)/g;s/(/\\(/g' | sed "s/'/\'\\\\\\\'\'/g")'"
+                          fi
                         else
-                          tempvalue="${tempvalue} '$(zenity --title="Введите значение" --entry --text="Введите значение" 2>/dev/null | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\`/g;s/)/\\)/g;s/(/\\(/g' | sed "s/'/\'\\\\\\\'\'/g")'"
+                          if [[ -z "${tempvalue:0:10}" ]]; then
+                            tempvalue="'$(input_text_zenity | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\\`/g;s/`/\`/g;s/)/\\)/g;s/(/\\(/g' | sed "s/'/\'\\\\\\\'\'/g")'"
+                          else
+                            tempvalue="${tempvalue} '$(input_text_zenity | sed 's/\\/\\\\/g;s/&/\\\&/g;s/%/\\%/g;s/"/\\"/g;s/`/\`/g;s/)/\\)/g;s/(/\\(/g' | sed "s/'/\'\\\\\\\'\'/g")'"
+                          fi
                         fi
 
                         echo ""
@@ -1830,9 +1993,19 @@ function changescriptfile {
                     #Если тип ввода 'выбор 0/1'
                     if [[ "$tempparamtype" = "truefalse" ]]; then
 
+                      title_msg="Выбор значения"
+                      text_msg="Выберите значение:"
+                      name_variable='tempvalue'
+                      templist_selectvalue=("0" "1")
+
                       #Пока значение пустое, выводим запрос
                       while [[ -z "$tempvalue" ]]; do
-                        tempvalue="$(zenity --list --title="Выберите значение" --text="Выберите значение" --column="0" "0" "1" --width=200 --height=200 --hide-header 2>/dev/null)"
+                        if [[ "$exec_no_display" -eq "1" ]]; then
+                          echo -e "\n$text_msg"
+                          select_use_value
+                        else
+                          tempvalue="$(select_use_value_zenity)"
+                        fi
                       done
                     fi
 
@@ -1886,9 +2059,12 @@ $NoColor"
         unset nextnamevalue
         unset tempparamdesc
         unset tpnvalue
-        unset listvalue
         unset cmdtempvalue
         unset tempvalue
+        unset title_msg
+        unset text_msg
+        unset name_variable
+        unset templist_selectvalue
       fi
     done
   else
@@ -1916,12 +2092,20 @@ function select_type_find_hosts {
           #Рассылка на все устройства в сети имеет тип sshmultisend (применяются списки исключения).
           typesend="sshonesend"
 
+          title_msg="Ввод хоста"
+          text_msg="Введите имя или ip адрес хоста:"
+
           while true; do
             hostnamevalue=""
 
             while ! [[ "$hostnamevalue" =~ $check_hostname_or_ip ]]; do
               echo -e "${YELLOW}Значение может содержать следующие символы: A-Z a-z А-Я а-я 0-9 . - $NoColor"
-              hostnamevalue="$(zenity --title="Введите имя или ip адрес хоста" --entry --text="Введите имя или ip адрес хоста" 2>/dev/null)"
+
+              if [[ "$exec_no_display" -eq "1" ]]; then
+                hostnamevalue="$(dialog --output-fd 1 --keep-tite --no-cancel --no-shadow --title "$title_msg" --inputbox "$text_msg" 18 70)"
+              else
+                hostnamevalue="$(input_text_zenity)"
+              fi
             done
 
             infmsg="Введено значение $hostnamevalue. Продолжить? [y/n]: "
@@ -1956,6 +2140,8 @@ $(sed 's/^ //' <<<"${list_ipall[@]/%/$'\n'}" | grep -v '^$')"
           done
 
           unset hostnamevalue
+          unset title_msg
+          unset text_msg
 
           splitting_list_into_parts
           break 2
@@ -2555,7 +2741,7 @@ function multisend_exec_info_in_one_file {
   if [[ -f "$sendlogs/tmp-failed_conn" ]]; then
     echo -e "${RED}Устройства к которым нет доступа (Записей в списке: $(wc -l <"$sendlogs/tmp-failed_conn")): $NoColor" >>"$sendlogs/all-sendinfo.txt"
 
-    cat "$sendlogs/tmp-failed_conn" | sort >>"$sendlogs/all-sendinfo.txt"
+    cat "$sendlogs/tmp-failed_conn" | sort -f -V >>"$sendlogs/all-sendinfo.txt"
     echo "" >>"$sendlogs/all-sendinfo.txt"
     rm -f "$sendlogs/tmp-failed_conn"
   else
@@ -3175,64 +3361,69 @@ function sshsendscript {
 
       echo -e "\n-----Информация о подключении/выполнении скриптов-----\n"
 
+      list_successful_exec_script=($(printf '%s\n' "${list_successful_exec_script[@]}" | sort))
       echo -e "${GREEN}Успешное выполнение (Записей в списке: ${#list_successful_exec_script[@]}$([[ "${#list_param_send_script[@]}" -eq "1" ]] && echo "; Доступно устройств: $num_devices_access")): $NoColor"
-      echo "${list_successful_exec_script[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$'
+      printf '%s\n' "${list_successful_exec_script[@]}"
 
       if [[ "${#list_param_send_script[@]}" -gt "1" ]]; then
         echo ""
 
+        list_successful_exec_full_scripts=($(printf '%s\n' "${list_successful_exec_full_scripts[@]}" | sort))
         echo -e "${GREEN}Успешное выполнение всех отправленных скриптов (Записей в списке: ${#list_successful_exec_full_scripts[@]}; Доступно устройств: $num_devices_access): $NoColor"
-        echo "${list_successful_exec_full_scripts[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$'
+        printf '%s\n' "${list_successful_exec_full_scripts[@]}"
       fi
 
       echo ""
 
+      list_skip_host=($(printf '%s\n' "${list_skip_host[@]}" | sort))
       echo -e "${YELLOW}Пропущенные устройства (Записей в списке: ${#list_skip_host[@]}; Доступно устройств: $num_devices_access): $NoColor"
-      echo "${list_skip_host[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$'
+      printf '%s\n' "${list_skip_host[@]}"
 
       echo ""
 
+      list_failed_scripts=($(printf '%s\n' "${list_failed_scripts[@]}" | sort))
       echo -e "${RED}Выполнение с ошибкой (Записей в списке: ${#list_failed_scripts[@]}$([[ "${#list_param_send_script[@]}" -eq "1" ]] && echo "; Доступно устройств: $num_devices_access")): $NoColor"
-      echo "${list_failed_scripts[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$'
+      printf '%s\n' "${list_failed_scripts[@]}"
 
       if [[ "${#list_param_send_script[@]}" -gt "1" ]]; then
         echo ""
 
+        list_devices_err_exec_scripts=($(printf '%s\n' "${list_devices_err_exec_scripts[@]}" | sort))
         echo -e "${RED}Устройства с ошибками (Записей в списке: ${#list_devices_err_exec_scripts[@]}; Доступно устройств: $num_devices_access): $NoColor"
-        echo "${list_devices_err_exec_scripts[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$'
+        printf '%s\n' "${list_devices_err_exec_scripts[@]}"
       fi
 
       echo ""
 
       echo -e "${RED}Устройства к которым нет доступа (Записей в списке: ${#list_failed_conn[@]}): $NoColor"
-      echo "${list_failed_conn[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$'
+      printf '%s\n' "${list_failed_conn[@]}"
 
       echo -e "\n-----Конец информации о подключении к устройствам-----\n"
 
       if [[ "$multisend" -gt "1" ]]; then
 
         if [[ "${#list_successful_exec_script[@]}" -gt "0" ]]; then
-          echo "${list_successful_exec_script[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-successful_exec_script"
+          printf '%s\n' "${list_successful_exec_script[@]}" | grep -v '^$' >>"$sendlogs/tmp-successful_exec_script"
         fi
 
         if [[ "${#list_successful_exec_full_scripts[@]}" -gt "0" ]]; then
-          echo "${list_successful_exec_full_scripts[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-successful_exec_full_scripts"
+          printf '%s\n' "${list_successful_exec_full_scripts[@]}" | grep -v '^$' >>"$sendlogs/tmp-successful_exec_full_scripts"
         fi
 
         if [[ "${#list_skip_host[@]}" -gt "0" ]]; then
-          echo "${list_skip_host[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-skip_host"
+          printf '%s\n' "${list_skip_host[@]}" | grep -v '^$' >>"$sendlogs/tmp-skip_host"
         fi
 
         if [[ "${#list_failed_scripts[@]}" -gt "0" ]]; then
-          echo "${list_failed_scripts[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-failed_scripts"
+          printf '%s\n' "${list_failed_scripts[@]}" | grep -v '^$' >>"$sendlogs/tmp-failed_scripts"
         fi
 
         if [[ "${#list_devices_err_exec_scripts[@]}" -gt "0" ]]; then
-          echo "${list_devices_err_exec_scripts[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-devices_err_exec_scripts"
+          printf '%s\n' "${list_devices_err_exec_scripts[@]}" | grep -v '^$' >>"$sendlogs/tmp-devices_err_exec_scripts"
         fi
 
         if [[ "${#list_failed_conn[@]}" -gt "0" ]]; then
-          echo "${list_failed_conn[@]/%/$'\n'}" | sed 's/^ //' | grep -v '^$' >>"$sendlogs/tmp-failed_conn"
+          printf '%s\n' "${list_failed_conn[@]}" | grep -v '^$' >>"$sendlogs/tmp-failed_conn"
         fi
 
         if [[ "$num_devices_access" -gt "0" ]]; then

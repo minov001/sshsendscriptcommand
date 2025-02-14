@@ -61,6 +61,9 @@ function ca_cert_management {
   #Восстановить используемую по умолчанию библиотеку корневых сертификтов libnssckbi.so (При наличии резервного файла .bak. При его отсутствии нужно переустановить содержащий файл пакет. Для Debian это libnss3).
   let recovery_ca_cert_other=0
 
+  #Выполнить обновление системных корневых сертификатов (0 - отключить, 1 - включить)
+  let exec_update_ca_cert=0
+
   #Вывести пользователю сообщение в случае обновления сертификатов или создания/удаления ссылок.
   let show_msg_update_cert=0
 
@@ -142,6 +145,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
     else
       echo -e "\nFirefox не установлен"
     fi
+  else
+    echo -e "\nВыполнение блока переназначения/восстановления библиотеки корневых сертификатов forefox пропущено"
   fi
 
   #Выполнить, если включено переназначение или восстановление системной библиотеки корневых сертификатов libnssckbi.so
@@ -191,43 +196,51 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
         fi
       fi
     fi
+  else
+    echo -e "\nВыполнение блока переназначения/восстановления системной библиотеки корневых сертификатов libnssckbi.so пропущено"
   fi
 
-  #Выполнить, если переменная не пуста
-  if [[ -n "$ca_cert_path" ]]; then
+  #Выполнить, если exec_update_ca_cert равен 1
+  if [[ "$exec_update_ca_cert" -eq "1" ]]; then
 
-    #Выполнить, если каталог существует
-    if [[ -d "$ca_cert_path" ]]; then
+    #Выполнить, если переменная не пуста
+    if [[ -n "$ca_cert_path" ]]; then
 
-      #Если переменная не пуста и каталог существует, то продолжаем
-      if [[ -n "$dirfiles" ]] && [[ -d "$dirfiles" ]]; then
+      #Выполнить, если каталог существует
+      if [[ -d "$ca_cert_path" ]]; then
 
-        #Ищем подходящие файлы. Если найдены, запускаем добавление
-        if [[ "$(ls -1 "$dirfiles" | grep -Ei '.crt$|.cer$|.pem$|.der$' | wc -l)" -gt "0" ]]; then
-          echo -e "\nЗапущено копирование файлов сертификатов"
-          find "$dirfiles" -maxdepth 1 -type f \( -iname '*.crt' -o -iname '*.cer' -o -iname '*.pem' -o -iname '*.der' \) -exec install -v --mode=644 '{}' "$ca_cert_path" \;
+        #Если переменная не пуста и каталог существует, то продолжаем
+        if [[ -n "$dirfiles" ]] && [[ -d "$dirfiles" ]]; then
 
-          echo -e "\nЗапуск обновления списка корневых сертификатов"
-          if [[ -n "$(which "update-ca-certificates" 2>/dev/null)" ]]; then
-            update-ca-certificates --verbose --fresh && let status_update_ca_cert=1
-          elif [[ -n "$(which "update-ca-trust" 2>/dev/null)" ]]; then
-            update-ca-trust && update-ca-trust extract && let status_update_ca_cert=1
+          #Ищем подходящие файлы. Если найдены, запускаем добавление
+          if [[ "$(ls -1 "$dirfiles" | grep -Ei '.crt$|.cer$|.pem$|.der$' | wc -l)" -gt "0" ]]; then
+            echo -e "\nЗапущено копирование файлов сертификатов"
+            find "$dirfiles" -maxdepth 1 -type f \( -iname '*.crt' -o -iname '*.cer' -o -iname '*.pem' -o -iname '*.der' \) -exec install -v --mode=644 '{}' "$ca_cert_path" \;
+
+            echo -e "\nЗапуск обновления списка корневых сертификатов"
+            if [[ -n "$(which "update-ca-certificates" 2>/dev/null)" ]]; then
+              update-ca-certificates --verbose --fresh && let status_update_ca_cert=1
+            elif [[ -n "$(which "update-ca-trust" 2>/dev/null)" ]]; then
+              update-ca-trust && update-ca-trust extract && let status_update_ca_cert=1
+            fi
+          else
+            echo -e "\nНе найдены файлы сертификатов для добавления в системное хранилище"
+            return 1
           fi
         else
-          echo -e "\nНе найдены файлы сертификатов для добавления в системное хранилище"
+          echo -e "\nНе передан каталог с сертификатами"
           return 1
         fi
       else
-        echo -e "\nНе передан каталог с сертификатами"
+        echo -e "\nКаталог $ca_cert_path не существует"
         return 1
       fi
     else
-      echo -e "\nКаталог $ca_cert_path не существует"
+      echo -e "\nПеременная ca_cert_path пуста"
       return 1
     fi
   else
-    echo -e "\nПеременная ca_cert_path пуста"
-    return 1
+    echo -e "\nВыполнение блока обновления сертификтов пропущено"
   fi
 
   #Выполнить, если включен вывод сообщения пользователю
