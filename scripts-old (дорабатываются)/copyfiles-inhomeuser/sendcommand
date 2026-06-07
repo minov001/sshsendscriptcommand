@@ -1,0 +1,70 @@
+#!/bin/bash
+
+shopt -s dotglob
+
+#Укажите в кавычках имя скрипта
+namescript="Копирование файлов в HOME (всем пользователям)"
+
+#Версия скрипта
+let scriptversion=1
+
+#Разместите ниже код вашего скрипта
+
+echo "Имя хоста"
+hostname
+echo ""
+
+function main {
+  #Путь до каталога в котором находятся домашние директории пользователей
+  homedirpath="/home"
+  #Переход в каталог с файлами. Поиск файлов и каталогов и запись их в массивы
+  cd "$dirfiles"
+  readarray -d ';' -t pathsfilels < <(find * -type f -o -type l | grep -Ev '^$' | tr '\n' ';')
+  readarray -d ';' -t pathsdirls < <(find * -type d | grep -Ev '^$' | tr '\n' ';')
+  echo "Файлов обнаружено: ${#pathsfilels[*]}"
+  echo "Количество каталогов: ${#pathsdirls[*]}"
+
+  #Если найден 1 и более файлов, то запускается поиск пользовательских каталогов
+  if [ "${#pathsfilels[*]}" -gt "0" ]; then
+    pathsuserls=($(ls -1 "$homedirpath"))
+    echo "Количество пользовательских каталогов: ${#pathsuserls[*]}"
+    if [ "${#pathsuserls[*]}" -gt "0" ]; then
+      for ((i = 0; i < ${#pathsuserls[*]}; i++)); do
+        #Проверка, действительно ли найденный каталог является пользовательским. Если да, то запускается копирование
+        if [ -n "$(getent passwd "${pathsuserls[i]}" | cut -d: -f6)" ]; then
+          usergroup="$(id ${pathsuserls[i]} -gn)"
+
+          for ((j = 0; j < ${#pathsdirls[*]}; j++)); do
+            mkdir -p "$homedirpath/${pathsuserls[i]}/${pathsdirls[j]}"
+            chown --no-dereference ${pathsuserls[i]}:"$usergroup" "$homedirpath/${pathsuserls[i]}/${pathsdirls[j]}"
+          done
+          for ((k = 0; k < ${#pathsfilels[*]}; k++)); do
+            cp -v -f -p -d "$dirfiles/${pathsfilels[k]}" "$homedirpath/${pathsuserls[i]}/${pathsfilels[k]}"
+            chown --no-dereference ${pathsuserls[i]}:"$usergroup" "$homedirpath/${pathsuserls[i]}/${pathsfilels[k]}"
+          done
+        fi
+      done
+    fi
+  fi
+}
+
+if [ "$(id -u)" -eq 0 ]; then
+
+  if [[ -n "$dirfiles" ]]; then
+
+  if [[ -d "$dirfiles" ]]; then
+  main
+  else
+  echo "Указанный каталог не существует: $dirfiles"
+  exit 1
+  fi
+  else
+  echo "Переменная dirfiles пуста"
+  exit 1
+  fi
+else
+  echo "Требуются права root для выполнения скрипта"
+  exit 1
+fi
+
+#Конец кода вашего скрипта

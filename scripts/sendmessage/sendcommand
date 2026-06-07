@@ -1,0 +1,89 @@
+#!/bin/bash
+
+#Укажите в кавычках имя скрипта
+namescript="Рассылка сообщения (Требуются root права)"
+
+#Версия скрипта
+let scriptversion=1
+
+#Список файлов, которые необходимо отправить из каталога sendfunc
+list_source_func=('func_send_msg.sh')
+
+#Подключение переданных файлов list_source_func
+if [[ "${#list_source_func[@]}" -gt "0" ]]; then
+
+  for ((num_list_func = 0; num_list_func < ${#list_source_func[@]}; num_list_func++)); do
+
+    if [[ -f "$(dirname "$(realpath "$0")")/${list_source_func[$num_list_func]}" ]]; then
+      source "$(dirname "$(realpath "$0")")/${list_source_func[$num_list_func]}"
+    else
+      echo "Файл (${list_source_func[$num_list_func]}) не найден"
+      exit 1
+    fi
+  done
+fi
+
+echo -e "\nВыполнение скрипта: $namescript"
+
+#Разместите ниже код вашего скрипта
+
+echo "Имя хоста"
+hostname
+echo ""
+
+#Вывод сообщения через notify-send (0 - отключить, 1 - включить)
+let send_notifysend=0
+
+#Время в миллисекундах, по истечении которого уведомление notify-send исчезнет (По умолчанию 10000 (10 секунд). При указании 0, уведомление автоматически не исчезает)
+let notifysend_expiretime=10000
+
+#Вывод сообщения через первое найденное диалоговое окно: yad, fly-dialog, zenity (0 - отключить, 1 - включить)
+#Порядок проверки соответствует порядку в массиве list_dialog_sendmsg
+let send_first_found_dialog=0
+
+#Вывод сообщения через yad (0 - отключить, 1 - включить)
+let send_yad=0
+
+#Вывод сообщения через fly-dialog (0 - отключить, 1 - включить)
+let send_flydialog=0
+
+#Вывод сообщения через zenity (0 - отключить, 1 - включить)
+let send_zenity=0
+
+#Вывод сообщения от имени пользователя или root (0 - от пользователя, 1 - от root)
+let send_msg_use_root=0
+
+#Тип ввода сообщения: file (необходимо отправить файл с текстом) и text (добавьте текст в массив msgtext)
+typesend='file'
+
+#Текст сообщения для показа (Если выбран тип ввода сообщения 'text' в typesend)
+msgtext=()
+
+#Добавьте имена пользователей в массив, если необходимо показать сообщение только им (поиск всех активных пользователей будет пропущен)
+activeusername=()
+
+#Заголовок сообщения (Если не заполнен, то используется заданное по умолчанию значение)
+headertext=''
+
+#Если send_first_found_dialog равен 1, то присваиваем значение 0 переменным send_yad, send_flydialog, send_zenity и ищем первое доступное диалоговое окно для использования
+if [[ "$send_first_found_dialog" -eq "1" ]]; then
+  let send_yad=0
+  let send_flydialog=0
+  let send_zenity=0
+
+  #Список значений для проверки в формате (имя-исполняемого-файла;имя-переменной)
+  list_dialog_sendmsg=('yad;send_yad' 'fly-dialog;send_flydialog' 'zenity;send_zenity')
+
+  for ((num_lds = 0; num_lds < ${#list_dialog_sendmsg[@]}; num_lds++)); do
+
+    #Если исполняемый файл найден в системе, то присваиваем значение 1 соответствующей переменной и выходим из цикла
+    if [[ -n "$(which "$(echo "${list_dialog_sendmsg[$num_lds]}" | cut -d ';' -f 1)" 2>/dev/null)" ]]; then
+      eval "let $(echo "${list_dialog_sendmsg[$num_lds]}" | cut -d ';' -f 2)=1"
+      break
+    fi
+  done
+fi
+
+send_message_active_users
+
+#Конец кода вашего скрипта

@@ -1,0 +1,744 @@
+#!/bin/bash
+
+export HISTFILE=/dev/null
+
+#Укажите в кавычках имя скрипта
+namescript="Управление пользователями"
+
+#Версия скрипта
+let scriptversion=1
+
+#Разместите ниже код вашего скрипта
+
+echo "Имя хоста"
+hostname
+echo ""
+
+checknum='^[0-9]+$'
+
+checkstr='^[A-Za-z0-9]+[A-Za-z0-9-]+[A-Za-z0-9]+$'
+
+#Показать пользователям сообщение в конце выполнения (0 - не показывать, 1 - показать)
+let showmessageusers=0
+
+#Показать через notify-send (0 - отключить, 1 - включить)
+let send_notifysend=1
+
+#Показать через fly-dialog (0 - отключить, 1 - включить)
+let send_flydialog=0
+
+#Показать через zenity (0 - отключить, 1 - включить)
+let send_zenity=0
+
+#Выполнить блок создания локальных пользователей/изменения данных локальных пользователей (0 - не выполнять, 1 -выполнить)
+let createorchange_localuser=0
+
+#Выполнить блок создания групп (0 - не выполнять, 1 -выполнить)
+let create_group=0
+
+#Выполнить блок добавления пользователей в группы (1 - выполнить, 0 - не выполнять)
+let adduseringroup=0
+
+#Выполнить блок удаления пользователей из группы по спискам (1 - выполнить, 0 - не выполнять)
+let deluseringroup=0
+
+#Выполнить блок настройки пользователей (1 - выполнить, 0 - не выполнять)
+let changeparamuser=0
+
+#Список локальных пользователей в формате: логин:зашифрованный-пароль:тип-пользователя:путь-к-домашнему-каталогу,0или1:shell-оболочка:GECOS,,,,:номер-UID:статус-блокировки
+#Секции логин и тип пользователя обязательны, а остальные секции могут быть пустыми, тогда будут использованы параметры по умолчанию.
+#Тип пользователя: system или user
+#Создать шифрованный пароль можно командой openssl passwd
+#путь-к-домашнему-каталогу,0или1 - до запятой путь, а после указывается значение 0 или 1 (значение необходимо при изменении домашнего каталога. 0 - не переносить данные из текущего каталога(создается новый домашний каталог), 1 - перенести данные из предыдущего домашнего каталога)
+#shell-оболочка - путь к файлу, который будет присвоен shell. Происходит проверка существования файла. Если не существует, то присвоение будет пропущено.
+#GECOS,,,, - дополнительная информация о пользователе
+#номер-UID - числовое значение, если нужен конкретный UID
+#В последней секции (статус-блокировки) допустимы значения 0 или 1 (0 - разблокирован, 1 - заблокирован). Можно не указывать, тогда при создании будет активный пользователь, а при изменении останется текущий статус учетной записи
+#Пример: list_createorchange_localuser='test150:$6$agKLfS5eEbK6opfa$wXlkSifB7pmo.d110HZe3TxV/3Wy5pT67ON0FKtzEzBZgP9RucQusBjdxI2bNTWA68763gvW.jUn7sZ/bxLPV1:user:/tmp/test150,0:/bin/bash:тестовый пользователь,,,,:1787:0;test1515::system:::,,,,:787:0'
+list_createorchange_localuser=''
+
+#Список групп для создания в формате: имя-группы:тип-группы:номер-GID. Имя и тип обязательны. GID можно не заполнять. Тип группы: system или user
+#Пример listcreate_group='test1:user:1893;test2:system:548'
+listcreate_group=''
+
+#Список пользователей для добавления в группы
+#Пример: username_add='test1;test2;test3;test4;test5'
+username_add=''
+
+#Список групп для добавления в них указанных пользователей
+#Пример: groupname_add='astra-admin;astra-console;lpadmin;dialout;cdrom;floppy;audio;video;plugdev;users'
+groupname_add=''
+
+#Список пользователей для удаления из групп
+#Пример: username_del='test1;test2;test3;test4;test5'
+username_del=''
+
+#Список групп для удаления из них указанных пользователей
+#Пример: groupname_del='astra-admin;astra-console;lpadmin;dialout;cdrom;floppy;audio;video;plugdev;users'
+groupname_del=''
+
+#Список пользователей и параметров для настройки пользователей в формате: список-пользователей-через-запятую:список-групп-для-добавления-через-запятую:список-групп-для-исключения-через-запятую:путь-к-домашнему-каталогу:shell-оболочка:минимальный-уровень-конфиденциальности:максимальный-уровень-конфиденциальности:максимальный-уровень-целостности
+#Изменение домашнего каталога и shell оболочки в данном блоке только для доменных пользователей через SSSD. Для локальных пользователей есть отдельный блок
+#Изменение домашнего каталога будет работать только если указан не список, а один конкретный пользователь
+#shell-оболочка - путь к файлу, который будет присвоен shell. Происходит проверка существования файла. Если не существует, то присвоение будет пропущено.
+#минимальный-уровень-конфиденциальности:максимальный-уровень-конфиденциальности:максимальный-уровень-целостности - числовые значения для выставления данных атритбутов пользователям. Будет выполняться только при наличии pdpl-user, т.е. только на Astra linux
+#Для выполнения данного блока необходим список пользователей и как минимум одина из дополнительных секций
+#Пример: list_changeparamuser='testuser1,testuser2,testuser3:testgroup1,testgroup2:testgroup5,testgroup7:::0:3:63;testuser7:testgroup2:testgroup5:::::'
+list_changeparamuser=''
+
+#Выключить устройство (0 - не выключать, 1 - выключить)
+let shutdownsystem=0
+
+#Перезагрузить устройство (0 - не перезагружать, 1 - перезагрузить). Перезагрузка имеет приоритет перед выключением, если включены оба действия
+let rebootsystem=0
+
+#Время, через которое будет произведена перезагрузка или выключение, если они будут выполняться
+let reboot_or_shutdown_time=10
+
+#Функция для вывода сообщения при необходимости
+function showmessage {
+  if [[ "$send_notifysend" -eq "1" ]] || [[ "$send_flydialog" -eq "1" ]] || [[ "$send_zenity" -eq "1" ]]; then
+    #Текст в заголовке уведомления
+    headertext="Уведомление $(date +"%d.%m.%Y-%H:%M")"
+
+    #Имя процессов, по которым можно определить DISPLAY, DBUS_SESSION_BUS_ADDRESS и XAUTHORITY. Необходимо в случаях, если команда who -u не выдаст нужные pid (например pid может быть неверным или пользователь подключен через xrdp, тогда его не будет в выводе команды who -u)
+    processname=("astra-event-watcher" "fly-wm" "startplasma-wayland" "startplasma-x11" "xfce4-session" "openbox" "mate-session" "lxqt-session" "lxsession" "x-session-manager" "gnome-software" "cinnamon-session")
+
+    #Поиск всех активных пользователей, если значение равно 1
+    if [[ "$showmsgallusers" -eq "1" ]]; then
+      activeusername=()
+
+      if [[ -n "$(who -u | grep -v pts | awk '{print $1}' | sort -u | grep -Ev '^$' | tr -d '\n')" ]]; then
+        readarray -d ';' -t activeusername < <(who -u | grep -v pts | awk '{print $1}' | sort -u | grep -Ev '^$' | tr '\n' ';')
+      fi
+
+      sesman_pid=$(ps --no-header -o ppid,pid -C xrdp-sesman | awk '$1==1 {print $2}')
+
+      if [[ -n "$sesman_pid" ]]; then
+        sesman_children=($(ps --no-header -o pid --ppid $sesman_pid))
+
+        if [[ ${#sesman_children[*]} -gt "0" ]]; then
+
+          for ((t = 0; t < ${#sesman_children[*]}; t++)); do
+            rdpuser="$(ps --no-header -o user --ppid ${sesman_children[$t]} | sed -n '2p')"
+
+            if [[ ${#activeusername[*]} -eq "0" ]]; then
+              activeusername=("$rdpuser")
+            elif [[ ${#activeusername[*]} -gt "0" ]]; then
+              if [[ -z "$(echo ${activeusername[@]} | grep -w "$rdpuser")" ]]; then
+                activeusername=("${activeusername[@]}" "$rdpuser")
+              fi
+            fi
+          done
+        fi
+      fi
+    fi
+
+    if [[ "${#activeusername[*]}" -gt "0" ]]; then
+      for ((a = 0; a < ${#activeusername[*]}; a++)); do
+        #Пустые массивы и переменная для счетчика массивов
+        numdisp=()
+        dbusenv=()
+        Xauth=()
+        let massivenum=0
+
+        #Определение PID процессов принадлежащих пользователю через who -u
+        readarray -d ';' -t pidsession < <(who -u | grep -w "${activeusername[$a]}" | awk '{print $6}' | grep -Ev '^$' | sort -u | tr '\n' ';')
+
+        #Перебор массива с именами процессов
+        for ((p = 0; p < ${#processname[*]}; p++)); do
+          #Определение PID указанных процессов принадлежащих пользователю
+          templistpid=($(pgrep -f "${processname[$p]}" -u "${activeusername[$a]}"))
+
+          #Если PID найдены, то перебор массива, сверка не было ли такого PID через команду who -u и добавление значения к основному массиву
+          for ((m = 0; m < ${#templistpid[*]}; m++)); do
+
+            if [[ -z "$(echo ${pidsession[@]} | grep "${templistpid[$m]}")" ]]; then
+              pidsession=("${pidsession[@]}" "${templistpid[$m]}")
+            fi
+          done
+        done
+
+        #Перебор массива значений PID. Поиск уникальных значений DISPLAY, а также поиск DBUS_SESSION_BUS_ADDRESS и XAUTHORITY
+        for ((numcicle = 0; numcicle < ${#pidsession[*]}; numcicle++)); do
+
+          if [[ "${pidsession[$numcicle]}" =~ $checknum ]]; then
+            tndisp=""
+            tndisp="$(cat /proc/${pidsession[$numcicle]}/environ | tr '\0' '\n' | grep '^DISPLAY=' | cut -d '=' -f 2)"
+
+            if [[ -n "$tndisp" ]]; then
+
+              if [[ -z "$(echo ${numdisp[@]} | grep "$tndisp")" ]]; then
+
+                if [[ -n "$(cat /proc/${pidsession[$numcicle]}/environ | tr '\0' '\n' | grep '^DBUS_SESSION_BUS_ADDRESS=' | sed -e 's/DBUS_SESSION_BUS_ADDRESS=//')" ]]; then
+
+                  if [[ -n "$(cat /proc/${pidsession[$numcicle]}/environ | tr '\0' '\n' | grep '^XAUTHORITY=' | cut -d '=' -f 2)" ]]; then
+                    #Определение номера дисплея
+                    numdisp[$massivenum]="$(cat /proc/${pidsession[$numcicle]}/environ | tr '\0' '\n' | grep '^DISPLAY=' | cut -d '=' -f 2)"
+
+                    #Определение адреса DBUS
+                    dbusenv[$massivenum]="$(cat /proc/${pidsession[$numcicle]}/environ | tr '\0' '\n' | grep '^DBUS_SESSION_BUS_ADDRESS=' | sed -e 's/DBUS_SESSION_BUS_ADDRESS=//')"
+
+                    #Определение значения XAUTHORITY
+                    Xauth[$massivenum]="$(cat /proc/${pidsession[$numcicle]}/environ | tr '\0' '\n' | grep '^XAUTHORITY=' | cut -d '=' -f 2)"
+                    let massivenum+=1
+                  fi
+                fi
+              fi
+            fi
+          fi
+        done
+
+        #Если массив с номерами дисплея не пуст, то запускается выполнение
+        for ((i = 0; i < ${#numdisp[*]}; i++)); do
+
+          #Если значения массива DISPLAY, DBUS_SESSION_BUS_ADDRESS и XAUTHORITY не пусты, то продолжается выполнение
+          if [[ -n "${numdisp[$i]}" && -n "${dbusenv[$i]}" && -n "${Xauth[$i]}" ]]; then
+            echo "Найден пользователь ${activeusername[$a]} - ${numdisp[$i]}"
+
+            if [[ "$send_notifysend" -eq "1" ]]; then
+
+              if [[ -n "$(which notify-send 2>/dev/null)" ]]; then
+                cmdnotifysend="XAUTHORITY='${Xauth[$i]}' DBUS_SESSION_BUS_ADDRESS='${dbusenv[$i]}' DISPLAY='${numdisp[$i]}' notify-send '$headertext' '$msgtext'"
+                systemd-run --uid=${activeusername[$a]} /bin/bash -c "$cmdnotifysend"
+              else
+                echo "notify-send не найден"
+              fi
+            fi
+
+            if [[ "$send_flydialog" -eq "1" ]]; then
+
+              if [[ -n "$(which fly-dialog 2>/dev/null)" ]]; then
+                cmdflydialog="XAUTHORITY='${Xauth[$i]}' DISPLAY='${numdisp[$i]}' fly-dialog --caption '$headertext' --msgbox '$msgtext'"
+                systemd-run --uid=${activeusername[$a]} /bin/bash -c "$cmdflydialog"
+              else
+                echo "fly-dialog не найден"
+              fi
+            fi
+
+            if [[ "$send_zenity" -eq "1" ]]; then
+
+              if [[ -n "$(which zenity 2>/dev/null)" ]]; then
+                cmdzenity="XAUTHORITY='${Xauth[$i]}' DISPLAY='${numdisp[$i]}' zenity --info --text='$msgtext' --title='$headertext'"
+                systemd-run --uid=${activeusername[$a]} /bin/bash -c "$cmdzenity"
+              else
+                echo "zenity не найден"
+              fi
+            fi
+
+          fi
+        done
+      done
+    else
+      echo "Список пользователей пуст. Нет активных пользователей или не заполнен массив пользователей (в случае показа сообщения определенным пользователям)"
+    fi
+  else
+    echo "Все методы вывода сообщения отключены"
+  fi
+}
+
+function main {
+  #Инициализация пустого массива активных пользователей. В него будут добавляться пользователи у которых были выполнены изменения
+  activeusername=()
+
+  #Если createorchange_localuser равно 1, то запускается выполнение блока создания/изменения данных локальных пользователей
+  if [[ "$createorchange_localuser" -eq "1" ]]; then
+    echo -e "\nВыполнение блока создания/изменения данных локальных пользователей\n"
+    if [[ -n "$(which adduser 2>/dev/null)" ]] && [[ -n "$(which usermod 2>/dev/null)" ]] && [[ -n "$(which chfn 2>/dev/null)" ]]; then
+
+      readarray -d ';' -t list_createorchange_localuser < <(echo "$list_createorchange_localuser" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';')
+
+      #Если в массиве list_createorchange_localuser значений больше 0, то запускается проверка значений
+      if [[ "${#list_createorchange_localuser[*]}" -gt "0" ]]; then
+
+        for ((i = 0; i < ${#list_createorchange_localuser[*]}; i++)); do
+
+          #Если количество резделителей ':' равно 7, т.е. 8 секций, то продолжается выполнение
+          if [[ "$(echo "${list_createorchange_localuser[$i]}" | grep -o ':' | wc -l)" -eq "7" ]]; then
+            addusercmd=""
+
+            addusername=""
+            addusername="$(cut -d ':' -f 1 <<<"${list_createorchange_localuser[$i]}")"
+            adduserpas=""
+            adduserpas="$(cut -d ':' -f 2 <<<"${list_createorchange_localuser[$i]}")"
+            addusertype=""
+            addusertype="$(cut -d ':' -f 3 <<<"${list_createorchange_localuser[$i]}")"
+            adduserhomepath=""
+            adduserhomepath="$(cut -d ':' -f 4 <<<"${list_createorchange_localuser[$i]}")"
+            addusershelltype=""
+            addusershelltype="$(cut -d ':' -f 5 <<<"${list_createorchange_localuser[$i]}")"
+            addusergecos=""
+            addusergecos="$(cut -d ':' -f 6 <<<"${list_createorchange_localuser[$i]}")"
+            adduseruid=""
+            adduseruid="$(cut -d ':' -f 7 <<<"${list_createorchange_localuser[$i]}")"
+            userstatus=""
+            userstatus="$(cut -d ':' -f 8 <<<"${list_createorchange_localuser[$i]}")"
+
+            #Если значение первой секции (имя пользователя) соответствует требованиям проверки, то продолжается выполнение
+            if [[ "$addusername" =~ $checkstr ]]; then
+
+              #Если пользователь не существует, то запускаем проверки значений и формируем команду для создания
+              if [[ -z "$(id "$addusername")" ]]; then
+
+                #Если значение третьей секции (тип-пользователя) соответствует условию, то продолжается выполнение
+                if [[ "$addusertype" = "system" || "$addusertype" = "user" ]]; then
+
+                  if [[ "$addusertype" = "system" ]]; then
+                    addusercmd="adduser \"$addusername\" --disabled-login --system"
+                  elif [[ "$addusertype" = "user" ]]; then
+                    addusercmd="adduser \"$addusername\" --disabled-login"
+                  fi
+
+                  if [[ -n "$(echo "$adduserhomepath" | cut -d ',' -f 1)" ]]; then
+                    addusercmd="$addusercmd --home \"$(echo "$adduserhomepath" | cut -d ',' -f 1)\""
+                  fi
+
+                  if [[ -e "$addusershelltype" ]]; then
+                    addusercmd="$addusercmd --shell \"$addusershelltype\""
+                  fi
+
+                  if [[ "$(echo "$addusergecos" | grep -o ',' | wc -l)" -eq "4" ]]; then
+                    addusercmd="$addusercmd --gecos \"$addusergecos\""
+                  else
+                    addusercmd="$addusercmd --gecos ',,,,'"
+                  fi
+
+                  if [[ "$adduseruid" =~ $checknum ]]; then
+                    addusercmd="$addusercmd --uid \"$adduseruid\""
+                  else
+                    echo "Пропуск добавления параметра UID в команду создания пользователя"
+                  fi
+
+                  eval "$addusercmd" && echo -e "\nПользователь $addusername создан\n" || echo -e "\nНе удалось создать пользоавателя $addusername\n"
+
+                  chpasswd -e <<<"$addusername:$adduserpas"
+
+                  if [[ "$userstatus" = "0" ]]; then
+                    usermod -U "$addusername"
+                  elif [[ "$userstatus" = "1" ]]; then
+                    usermod -L "$addusername"
+                  fi
+
+                else
+                  echo "Значение третьей секции (тип-пользователя) не соответствует условию. Допустимые значения: user и system. Полная строка: «${list_createorchange_localuser[$i]}»"
+                fi
+              else
+                echo "Пользователь $addusername существует. Создание пользователя пропущено"
+
+                if [[ -n "$(cat /etc/passwd | cut -d ':' -f 1 | grep -w "$addusername")" ]]; then
+                  (chpasswd -e <<<"$addusername:$adduserpas") && echo "Пароль пользователя $addusername изменен" || echo "Не удалось изменить пароль пользователя $addusername"
+
+                  chage -l "$addusername"
+
+                  if [[ "$userstatus" = "0" ]]; then
+                    usermod -U "$addusername" && echo "Пользователь $addusername разблокирован" || echo "Не удалось разблокировать пользователя $addusername"
+                  elif [[ "$userstatus" = "1" ]]; then
+                    usermod -L "$addusername" && echo "Пользователь $addusername заблокирован" || echo "Не удалось заблокировать пользователя $addusername"
+                  else
+                    echo "Пропуск блокировки/разблокировки пользователя"
+                  fi
+
+                  if [[ "$(echo "$addusergecos" | grep -o ',' | wc -l)" -eq "4" ]]; then
+                    chfn -f "$(echo "$addusergecos" | cut -d ',' -f 1)" "$addusername" && echo "Смена полного имени пользователя $addusername выполнена" || echo "Смена полного имени пользователя $addusername не выполнена"
+                    chfn -r "$(echo "$addusergecos" | cut -d ',' -f 2)" "$addusername" && echo "Смена номера комнаты пользователя $addusername выполнена" || echo "Смена номера комнаты пользователя $addusername не выполнена"
+                    chfn -w "$(echo "$addusergecos" | cut -d ',' -f 3)" "$addusername" && echo "Смена офисного номера тел. пользователя $addusername выполнена" || echo "Смена офисного номера тел. пользователя $addusername не выполнена"
+                    chfn -h "$(echo "$addusergecos" | cut -d ',' -f 4)" "$addusername" && echo "Смена домашнего тел. пользователя $addusername выполнена" || echo "Смена домашнего тел. пользователя $addusername не выполнена"
+                    chfn -o "$(echo "$addusergecos" | cut -d ',' -f 5)" "$addusername" && echo "Смена другой инф. GECOS о пользователе $addusername выполнена" || echo "Смена другой инф. GECOS о пользователе $addusername не выполнена"
+                  else
+                    echo "Пропуск смены GECOS информации"
+                  fi
+
+                  if [[ -n "$(echo "$adduserhomepath" | cut -d ',' -f 1)" ]]; then
+
+                    if [[ "$(echo "$adduserhomepath" | cut -d ',' -f 2)" = "0" ]]; then
+                      usermod -d "$(echo "$adduserhomepath" | cut -d ',' -f 1)" "$addusername" && mkhomedir_helper "$addusername" && chmod 700 "$(echo "$adduserhomepath" | cut -d ',' -f 1)" && echo "Смена домашнего каталога пользователя $addusername выполнена" || echo "Смена домашнего каталога пользователя $addusername не выполнена"
+                    elif [[ "$(echo "$adduserhomepath" | cut -d ',' -f 2)" = "1" ]]; then
+                      usermod -md "$(echo "$adduserhomepath" | cut -d ',' -f 1)" "$addusername" && echo "Смена домашнего каталога пользователя $addusername с переносом данных выполнена" || echo "Смена домашнего каталога пользователя $addusername с переносом данных не выполнена"
+                    fi
+
+                  fi
+
+                  if [[ -e "$addusershelltype" ]]; then
+                    chsh -s "$addusershelltype" "$addusername" && echo "Смена shell оболочки пользователя $addusername выполнена" || echo "Смена shell оболочки пользователя $addusername не выполнена"
+                  fi
+
+                  if [[ -z "$activeusername" ]]; then
+                    activeusername=("$addusername")
+                  else
+                    if [[ -z "$(echo ${activeusername[@]} | grep -w "$addusername")" ]]; then
+                      activeusername=("${activeusername[@]}" "$addusername")
+                    fi
+                  fi
+
+                else
+                  echo "Пользователь не найден в /etc/passwd. Пользователь не является локальным"
+                fi
+              fi
+            else
+              echo "Имя пользователя заполнено некорректно. Полная строка: «${list_createorchange_localuser[$i]}»"
+            fi
+          else
+            echo "Значение массива некорректно (должно быть 7 секций разделенных двоеточием).Полная строка: «${list_createorchange_localuser[$i]}»"
+          fi
+        done
+
+      else
+        echo "Массив list_createorchange_localuser пуст"
+      fi
+
+    else
+      echo "Не обнаружен исполняемый файл:
+                adduser - $([ -n "$(which adduser 2>/dev/null)" ] && echo "Найден" || echo "Не найден")
+                usermod - $([ -n "$(which usermod 2>/dev/null)" ] && echo "Найден" || echo "Не найден")
+                chfn - $([ -n "$(which chfn 2>/dev/null)" ] && echo "Найден" || echo "Не найден")"
+    fi
+  else
+    echo -e "\nБлок создания локальных пользователей/изменения данных локальных пользователей пропущен\n"
+  fi
+
+  #Если create_group равно 1, то запускается выполнение блока создания групп
+  if [[ "$create_group" -eq "1" ]]; then
+    echo -e "\nВыполнение блока создания групп\n"
+    if [[ -n "$(which addgroup 2>/dev/null)" ]]; then
+
+      readarray -d ';' -t listcreate_group < <(echo "$listcreate_group" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';')
+
+      #Если в массиве listcreate_group значений больше 0, то запускается проверка значений
+      if [[ "${#listcreate_group[*]}" -gt "0" ]]; then
+
+        for ((i = 0; i < ${#listcreate_group[*]}; i++)); do
+
+          #Если количество резделителей ':' равно 2, т.е. 3 секции, то продолжается выполнение
+          if [[ "$(echo "${listcreate_group[$i]}" | grep -o ':' | wc -l)" -eq "2" ]]; then
+            addgroupcmd=""
+
+            addgroupname=""
+            addgroupname="$(cut -d ':' -f 1 <<<"${listcreate_group[$i]}")"
+            addgrouptype=""
+            addgrouptype="$(cut -d ':' -f 2 <<<"${listcreate_group[$i]}")"
+            addgroupgid=""
+            addgroupgid="$(cut -d ':' -f 3 <<<"${listcreate_group[$i]}")"
+
+            #Если значение первой секции (имя группы) соответствует требованиям проверки, то продолжается выполнение
+            if [[ "$addgroupname" =~ $checkstr ]]; then
+
+              #Проверка существования группы
+              if [[ -z "$(getent group | cut -d: -f1 | grep "$addgroupname")" ]]; then
+
+                #Если значение второй секции (тип-группы) соответствует условию, то продолжается выполнение
+                if [[ "$addgrouptype" = "system" || "$addgrouptype" = "user" ]]; then
+
+                  if [[ "$addgrouptype" = "system" ]]; then
+                    addgroupcmd="addgroup \"$addgroupname\" --system"
+                  elif [[ "$addgrouptype" = "user" ]]; then
+                    addgroupcmd="addgroup \"$addgroupname\""
+                  fi
+
+                  if [[ "$addgroupgid" =~ $checknum ]]; then
+                    addgroupcmd="$addgroupcmd --gid \"$addgroupgid\""
+                  else
+                    echo "Пропуск добавления параметра GID в команду создания группы"
+                  fi
+
+                  eval "$addgroupcmd" && echo -e "\nГруппа $addgroupname создана\n" || echo -e "\nНе удалось создать группу $addgroupname\n"
+
+                else
+                  echo "Значение второй секции (тип-группы) не соответствует условию. Допустимые значения: user и system. Полная строка: «${listcreate_group[$i]}»"
+                fi
+              else
+                echo "Группа $addgroupname существует. Создание пропущено"
+              fi
+
+            else
+              echo "Имя группы заполнено некорректно. Полная строка: «${listcreate_group[$i]}»"
+            fi
+          else
+            echo "Значение массива некорректно (должно быть 3 секции разделенных двоеточием).Полная строка: «${listcreate_group[$i]}»"
+          fi
+        done
+
+      else
+        echo "Массив listcreate_group пуст"
+      fi
+
+    else
+      echo "Не обнаружен исполняемый файл:
+                addgroup - $([ -n "$(which addgroup 2>/dev/null)" ] && echo "Найден" || echo "Не найден")"
+    fi
+  else
+    echo -e "\nБлок создания групп пропущен\n"
+  fi
+
+  #Если adduseringroup равно 1, то запускается выполнение блока добавления пользователей в группы
+  if [[ "$adduseringroup" -eq "1" ]]; then
+    echo -e "\nВыполнение блока добавления пользователей в группы\n"
+    readarray -d ';' -t username_add < <(echo "$username_add" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';')
+    readarray -d ';' -t groupname_add < <(echo "$groupname_add" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';')
+
+    if [[ "${#username_add[*]}" -gt "0" ]] && [[ "${#groupname_add[*]}" -gt "0" ]]; then
+
+      for ((i = 0; i < ${#username_add[*]}; i++)); do
+
+        if [[ "${username_add[$i]}" =~ $checkstr ]]; then
+          echo "Настройка пользователя ${username_add[$i]}"
+
+          for ((j = 0; j < ${#groupname_add[*]}; j++)); do
+
+            if [[ "${groupname_add[$j]}" =~ $checkstr ]]; then
+              adduser "${username_add[$i]}" "${groupname_add[$j]}"
+
+              if [[ -z "$activeusername" ]]; then
+                activeusername=("${username_add[$i]}")
+              else
+                if [[ -z "$(echo ${activeusername[@]} | grep -w "${username_add[$i]}")" ]]; then
+                  activeusername=("${activeusername[@]}" "${username_add[$i]}")
+                fi
+              fi
+            else
+              echo "Имя группы не соответствует требованиям: ${groupname_add[$j]}"
+            fi
+          done
+
+        else
+          echo "Имя пользователя не соответствует требованиям: ${username_add[$i]}"
+        fi
+      done
+
+    else
+      echo "Массив с данными пуст:
+    username_add - ${#username_add[*]}
+    groupname_add - ${#groupname_add[*]}"
+    fi
+
+  else
+    echo -e "\nБлок добавления пользователей в группы пропущен\n"
+  fi
+
+  #Если deluseringroup равно 1, то запускается выполнение блока удаления пользователей из групп
+  if [[ "$deluseringroup" -eq "1" ]]; then
+    echo -e "\nВыполнение блока удаления пользователей из групп\n"
+    readarray -d ';' -t username_del < <(echo "$username_del" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';')
+    readarray -d ';' -t groupname_del < <(echo "$groupname_del" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';')
+
+    if [[ "${#username_del[*]}" -gt "0" ]] && [[ "${#groupname_del[*]}" -gt "0" ]]; then
+
+      for ((i = 0; i < ${#username_del[*]}; i++)); do
+
+        if [[ "${username_del[$i]}" =~ $checkstr ]]; then
+          echo "Настройка пользователя ${username_del[$i]}"
+
+          for ((j = 0; j < ${#groupname_del[*]}; j++)); do
+
+            if [[ "${groupname_del[$j]}" =~ $checkstr ]]; then
+              deluser "${username_del[$i]}" "${groupname_del[$j]}"
+
+              if [[ -z "$activeusername" ]]; then
+                activeusername=("${username_del[$i]}")
+              else
+                if [[ -z "$(echo ${activeusername[@]} | grep -w "${username_del[$i]}")" ]]; then
+                  activeusername=("${activeusername[@]}" "${username_del[$i]}")
+                fi
+              fi
+            else
+              echo "Имя группы не соответствует требованиям: ${groupname_del[$j]}"
+            fi
+          done
+
+        else
+          echo "Имя пользователя не соответствует требованиям: ${username_del[$i]}"
+        fi
+      done
+
+    else
+      echo "Массив с данными пуст:
+    username_del - ${#username_del[*]}
+    groupname_del - ${#groupname_del[*]}"
+    fi
+  else
+    echo -e "\nБлок удаления пользователей из групп пропущен\n"
+  fi
+
+  #Если changeparamuser равно 1, то запускается выполнение блока настройки пользователей
+  if [[ "$changeparamuser" -eq "1" ]]; then
+    echo -e "\nВыполнение блока настройки пользователей\n"
+    readarray -d ';' -t list_changeparamuser < <(echo "$list_changeparamuser" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';')
+
+    #Если в массиве list_changeparamuser значений больше 0, то запускается проверка значений
+    if [[ "${#list_changeparamuser[*]}" -gt "0" ]]; then
+
+      for ((i = 0; i < ${#list_changeparamuser[*]}; i++)); do
+
+        #Если количество резделителей ':' равно 7, т.е. 8 секций, то продолжается выполнение
+        if [[ "$(echo "${list_changeparamuser[$i]}" | grep -o ':' | wc -l)" -eq "7" ]]; then
+
+          changeusername=()
+          readarray -d ',' -t changeusername < <(cut -d ':' -f 1 <<<"${list_changeparamuser[$i]}" | tr ',' '\n' | grep -Ev '^$' | sort -u | tr '\n' ',')
+          addgroupuser=()
+          readarray -d ',' -t addgroupuser < <(cut -d ':' -f 2 <<<"${list_changeparamuser[$i]}" | tr ',' '\n' | grep -Ev '^$' | sort -u | tr '\n' ',')
+          delgroupuser=()
+          readarray -d ',' -t delgroupuser < <(cut -d ':' -f 3 <<<"${list_changeparamuser[$i]}" | tr ',' '\n' | grep -Ev '^$' | sort -u | tr '\n' ',')
+          adduserhomepath=""
+          adduserhomepath="$(cut -d ':' -f 4 <<<"${list_changeparamuser[$i]}")"
+          addusershelltype=""
+          addusershelltype="$(cut -d ':' -f 5 <<<"${list_changeparamuser[$i]}")"
+          minlevelprivacy=""
+          minlevelprivacy="$(cut -d ':' -f 6 <<<"${list_changeparamuser[$i]}")"
+          maxlevelprivacy=""
+          maxlevelprivacy="$(cut -d ':' -f 7 <<<"${list_changeparamuser[$i]}")"
+          maxintegritylevel=""
+          maxintegritylevel="$(cut -d ':' -f 8 <<<"${list_changeparamuser[$i]}")"
+
+          #Если в массиве changeusername значений больше 0, то запускается проверка значений
+          if [[ "${#changeusername[*]}" -gt "0" ]]; then
+
+            for ((usernum = 0; usernum < ${#changeusername[*]}; usernum++)); do
+
+              #Если пользователь существует, то продолжаем
+              if [[ -n "$(id "${changeusername[$usernum]}")" ]]; then
+
+                echo "Настройка пользователя ${changeusername[$usernum]}"
+
+                if [[ "${#addgroupuser[*]}" -gt "0" ]]; then
+
+                  for ((groupnum = 0; groupnum < ${#addgroupuser[*]}; groupnum++)); do
+                    adduser "${changeusername[$usernum]}" "${addgroupuser[$groupnum]}"
+                  done
+                else
+                  echo "Пропуск добавления в группы. Список групп пуст"
+                fi
+
+                if [[ "${#delgroupuser[*]}" -gt "0" ]]; then
+
+                  for ((groupnum = 0; groupnum < ${#delgroupuser[*]}; groupnum++)); do
+                    deluser "${changeusername[$usernum]}" "${delgroupuser[$groupnum]}"
+                  done
+                else
+                  echo "Пропуск добавления в группы. Список групп пуст"
+                fi
+
+                if [[ -n "$(which sss_override 2>/dev/null)" ]]; then
+                  if [[ -z "$(cat /etc/passwd | cut -d ':' -f 1 | grep -w "${changeusername[$usernum]}")" ]]; then
+
+                    if [[ -n "$adduserhomepath" ]]; then
+                      if [[ "${#changeusername[*]}" -eq "1" ]]; then
+                        sss_override user-add "${changeusername[$usernum]}" -h "$adduserhomepath" && echo "Смена домашнего каталога пользователя ${changeusername[$usernum]} выполнена" || echo "Смена домашнего каталога пользователя ${changeusername[$usernum]} не выполнена"
+                      else
+                        echo "В списке больше одного пользователя. Смена домашнего каталога пропущена"
+                      fi
+                    fi
+
+                    if [[ -e "$addusershelltype" ]]; then
+                      sss_override user-add "${changeusername[$usernum]}" -s "$addusershelltype" && echo "Смена shell оболочки пользователя ${changeusername[$usernum]} выполнена" || echo "Смена shell оболочки пользователя ${changeusername[$usernum]} не выполнена"
+                    fi
+
+                  else
+                    echo "Пользователь является локальным. Пропуск смены Домашнего каталога и shell. Для смены этих параметров у локального пользователя используйте другой блок для выполнения"
+                  fi
+                else
+                  echo "Пропуск смены shell/домашнего каталога. sss_override не найден"
+                fi
+
+                if [[ -n "$(which pdpl-user 2>/dev/null)" ]]; then
+                  if [[ "$minlevelprivacy" =~ $checknum ]] && [[ "$maxlevelprivacy" =~ $checknum ]]; then
+                    pdpl-user -l "$minlevelprivacy":"$maxlevelprivacy" "${changeusername[$usernum]}"
+                  else
+                    echo "Значение минимальной или максимальной конфиденциальности некорректно
+                    minlevelprivacy - $minlevelprivacy
+                    maxlevelprivacy - $maxlevelprivacy"
+                  fi
+
+                  if [[ "$maxintegritylevel" =~ $checknum ]]; then
+                    pdpl-user -i "$maxintegritylevel" "${changeusername[$usernum]}"
+                  else
+                    echo "Значение минимальной или максимальной конфиденциальности некорректно
+                    maxintegritylevel - $maxintegritylevel"
+                  fi
+                else
+                  echo "Пропуск смены уровней конфиденциальности/целостности. pdpl-user не найден"
+                fi
+
+                if [[ -z "$activeusername" ]]; then
+                  activeusername=("${changeusername[$usernum]}")
+                else
+                  if [[ -z "$(echo ${activeusername[@]} | grep -w "${changeusername[$usernum]}")" ]]; then
+                    activeusername=("${activeusername[@]}" "${changeusername[$usernum]}")
+                  fi
+                fi
+              fi
+            done
+          fi
+        else
+          echo "Значение массива некорректно (должно быть 7 секций разделенных двоеточием).Полная строка: «${list_changeparamuser[$i]}»"
+        fi
+      done
+
+    else
+      echo "Массив list_changeparamuser пуст"
+    fi
+
+  else
+    echo -e "\nБлок настройки пользователей пропущен\n"
+  fi
+
+  if [[ -n "$activeusername" ]]; then
+    #Блок выполнения выключения/перезагрузки
+    if [[ "$rebootsystem" -eq "1" ]]; then
+      echo -e "\nВыполнение блока выключения/перезагрузки\n"
+      if [[ "$showmessageusers" -eq "1" ]]; then
+
+        #Текст сообщения
+        msgtext="В системе произошли изменения. Система будет перезагружена через $reboot_or_shutdown_time минут"
+
+        let showmsgallusers=1
+
+        showmessage
+
+        let showmessageusers=0
+
+        shutdown -r +$reboot_or_shutdown_time
+      elif [[ "$showmessageusers" -eq "0" ]]; then
+        shutdown -r +$reboot_or_shutdown_time
+      fi
+    elif [[ "$shutdownsystem" -eq "1" ]] && [[ "$rebootsystem" -ne "1" ]]; then
+      if [[ "$showmessageusers" -eq "1" ]]; then
+
+        #Текст сообщения
+        msgtext="В системе произошли изменения. Система будет выключена через $reboot_or_shutdown_time минут"
+
+        let showmsgallusers=1
+
+        showmessage
+
+        let showmessageusers=0
+
+        shutdown -P +$reboot_or_shutdown_time
+      elif [[ "$showmessageusers" -eq "0" ]]; then
+        shutdown -P +$reboot_or_shutdown_time
+      fi
+    else
+      echo -e "\nБлок выключения/перезагрузки пропущен\n"
+    fi
+
+    #Блок вывода сообщения пользователям, для которых произошли изменения. Выполниться, если вывод сообщений включен и не выполняется выключение/перезагрузка
+    if [[ "$showmessageusers" -eq "1" ]]; then
+      echo -e "\nВыполнение блока вывода сообщения пользователям, у которых произошли изменения\n"
+
+      #Текст сообщения
+      msgtext="Для вашего пользователя выполнены изменения в системе. Необходимо перезайти в сессию или перезагрузить компьютер"
+
+      showmsgallusers=0
+
+      showmessage
+    else
+      echo -e "\nПропуск выполнения блока вывода сообщения пользователям, у которых произошли изменения\n"
+    fi
+  fi
+}
+
+if [ "$(id -u)" -eq 0 ]; then
+  main
+else
+  echo "Требуются права root для выполнения скрипта"
+fi
+
+#Конец кода вашего скрипта

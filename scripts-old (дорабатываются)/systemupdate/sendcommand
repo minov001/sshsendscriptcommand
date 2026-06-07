@@ -1,0 +1,54 @@
+#!/bin/bash
+
+#Завершить выполнение скрипта в случае ошибки
+set -e
+
+#Укажите в кавычках имя скрипта
+namescript="Обновление системы"
+
+#Версия скрипта
+let scriptversion=1
+
+#Разместите ниже код вашего скрипта
+
+echo "Имя хоста"
+hostname
+echo ""
+
+#Тип обновления: apt или astra-update
+typeupdate=
+
+function main {
+  if [[ "$typeupdate" = "apt" ]] && [[ -n "$(which apt 2>/dev/null)" ]]; then
+    if [[ -n "$(which astra-shutdown-lock 2>/dev/null)" ]]; then
+      astra-shutdown-lock enable
+    fi
+
+    apt update && DEBIAN_FRONTEND=noninteractive apt -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -y dist-upgrade
+
+    if [[ -n "$(which astra-shutdown-lock 2>/dev/null)" ]]; then
+      astra-shutdown-lock disable
+    fi
+  fi
+
+  if [[ "$typeupdate" = "astra-update" ]] && [[ -n "$(which astra-update 2>/dev/null)" ]]; then
+
+    if [[ -n "$(which astra-shutdown-lock 2>/dev/null)" ]]; then
+      astra-shutdown-lock enable
+    fi
+
+    astra-update -A -r -T -K
+
+    if [[ -n "$(which astra-shutdown-lock 2>/dev/null)" ]]; then
+      astra-shutdown-lock disable
+    fi
+  fi
+}
+
+if [ "$(id -u)" -eq 0 ]; then
+  main
+else
+  echo "Требуются права root для выполнения скрипта"
+fi
+
+#Конец кода вашего скрипта

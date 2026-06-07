@@ -1,0 +1,1 @@
+KERNEL=="sd[a-z]|sd[a-z][1-9]", SUBSYSTEMS=="usb", ACTION=="add", GROUP="floppy", MODE:="0660", PDPL="0:0:0:ehole"

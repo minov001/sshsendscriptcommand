@@ -1,0 +1,34 @@
+#!/bin/bash
+
+namescript="Перезагрузка системы (Требуются root права)"
+
+check_num='^[0-9]+$'
+
+#Версия скрипта
+let scriptversion=1
+
+#Время в секундах до перезагрузки (выставляйте значение в зависимости от количества/размера переданных файлов, чтобы хватило время на их удаление и корректное отключение ssh сессии)
+let time_to_reboot=10
+
+if ! [[ "$time_to_reboot" =~ $check_num ]] && [[ "$time_to_reboot" -lt "10" ]]; then
+  let time_to_reboot=10
+fi
+
+echo -e "\nВыполнение скрипта: $namescript"
+
+echo "Имя хоста"
+hostname
+echo ""
+
+function main {
+  systemd-run bash -c "sleep $time_to_reboot; reboot;"
+}
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  main
+else
+  echo "Требуются права root для выполнения скрипта"
+  exit 1
+fi
+
+#Конец кода вашего скрипта

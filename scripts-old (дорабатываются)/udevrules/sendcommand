@@ -1,0 +1,55 @@
+#!/bin/bash
+
+shopt -s dotglob
+
+#Укажите в кавычках имя скрипта
+namescript="Правила udev"
+
+#Версия скрипта
+let scriptversion=1
+
+#Разместите ниже код вашего скрипта
+
+echo "Имя хоста"
+hostname
+echo ""
+
+function main {
+  #Если значение переменной "1", то файлы правил будут скопированы принудительно
+  let forcecopy=1
+
+  #Каталог правил udev
+  udevdir="/etc/udev/rules.d"
+
+  #Определение включен ли МКЦ
+  micstatus="$(cat /proc/cmdline | grep "parsec.max_ilev")"
+
+  #Функция копирования. Переход в каталог файлов, поиск подходящих файлов по фильтру, копирование и перезагрузка правил
+  function copyrules {
+    cd "$dirfiles"
+    if [[ -n "$(ls -1 | grep '.rules')" ]]; then
+      for file in $(ls -1 | grep '.rules'); do
+        cp -f -v "$dirfiles/$file" "$udevdir"
+        chown root:root "$udevdir/$file"
+        chmod 644 "$udevdir/$file"
+        udevadm control --reload-rules
+      done
+    else
+      echo "Файлы правил не найдены"
+    fi
+  }
+
+  #Если МКЦ включен или задано принудительное копирование, то запускается выполнение
+  if [ -n "$micstatus" ] || [ "$forcecopy" -eq "1" ]; then
+    copyrules
+  else
+    echo "Выполнение пропущено"
+  fi
+}
+
+if [ "$(id -u)" -eq 0 ]; then
+  main
+else
+  echo "Требуются права root для выполнения скрипта"
+fi
+#Конец кода вашего скрипта
