@@ -5,7 +5,7 @@ check_path='^[A-Za-zА-Яа-я0-9(),./@_[:space:]-]+$'
 check_num='^[0-9]+$'
 
 #Хеш-сумма файла version
-hash_file_version="008bbb1e5ca404e90f95482441cbc2a73001fbb1"
+hash_file_version="657d4f28e6a1818e621ad3c4b05b0fc3a3c238db"
 
 #Проверка полного пути запускаемого скрипта на допустимые символы
 if ! [[ "$(realpath "$0")" =~ $check_path ]]; then
