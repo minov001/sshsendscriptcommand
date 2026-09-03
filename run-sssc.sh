@@ -57,7 +57,7 @@ chmod -R 700 "$dir_runscript"
 #Проверка существования, хеш-суммы и подключение файла с функциями
 if [[ -f "$dir_runscript/func.sh" ]]; then
 
-  if [[ "$(sha1sum "$dir_runscript/func.sh" | cut -d ' ' -f 1)" = "08e5092049c416a5b130f74ecf2a995c37c3030a" ]]; then
+  if [[ "$(sha1sum "$dir_runscript/func.sh" | cut -d ' ' -f 1)" = "357c8b6c3471beff074d1da26a9f1bf88a89c7d9" ]]; then
     source func.sh
   else
     echo -e "\n${RED}Хеш-сумма файла func.sh не совпадает. Файл поврежден или не соответствует версии скрипта. $NoColor"
@@ -72,7 +72,7 @@ fi
 mkdir -p "$dir_logs" "$dir_temp" "$dir_conf" "$dir_conf/fileshosts" "$dir_sendfunc" "$dir_runscript/files" "$dir_runscript/scripts"
 
 #Массив с путями к файлам для проверки на существование
-list_value_check=("$dir_runscript/remote-runprecommand.sh|file" "$dir_conf/sssc.conf|file" "$dir_conf/screenrc.conf|file" "$dir_runscript/remote-temprunscript-cron|file")
+list_value_check=("$dir_runscript/remote-runprecommand.sh|file" "$dir_conf/sssc.conf|file" "$dir_conf/screenrc.conf|file" "$dir_runscript/remote-temprunscript-cron|file" "$dir_runscript/con_pas.sh|file" "$dir_runscript/con_key.sh|file" "$dir_runscript/con_kerberos.sh|file")
 
 #Тип проверки значений
 check_type="existence"
@@ -271,6 +271,9 @@ echo -e "\nКаталог скриптов на локальном ПК: ${GREEN
 Логин: ${GREEN}$logname $NoColor
 Количество потоков рассылки: ${GREEN}$multisend $NoColor
 Таймаут на подключение к ПК по SSH: ${GREEN}$sshtimeout $NoColor
+Интервал проверки активности SSH соединения в секундах: ${GREEN}$ssh_check_interval $NoColor
+Количество попыток проверки активности SSH соединения: ${GREEN}$ssh_check_col $NoColor
+Максимальное время ожидания ввода-вывода rsync в секундах: ${GREEN}$rsync_timeout $NoColor
 Номер SSH порта: ${GREEN}$numportssh $NoColor
 Тип SSH подключения (Рекомендуется подключение по ключу): ${GREEN}$sshtypecon $NoColor
 Путь до файла закрытого ключа: ${GREEN}$sshkeyfile $NoColor
@@ -391,7 +394,13 @@ echo "Версия SSH: $(ssh -V 2>&1 | sed 's/OpenSSH_\([0-9]*\+\.\+[0-9]*\).*/
 
 #Если скрипт запущен из терминала с переданными параметрами, то запускается подготовка файлов, иначе запускается интерактивное выполнение
 if [[ "$type_run_sssc" = "console" ]]; then
+  err_status_sendfunc="0"
+
   initialsetup
+
+  if [[ "$err_status_sendfunc" -eq "1" ]]; then
+    exit 1
+  fi
 
   #Если отправка на все доступные устройства по файлу хостов, то запускается поиск устройств, иначе запускается разбивка списка устройств на количество потоков
   if [[ "$typesend" = "sshmultisend" ]]; then

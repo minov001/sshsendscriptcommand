@@ -1,6 +1,6 @@
 #!/bin/bash
 
-script_current_version="2025031301"
+script_current_version="2026090301"
 
 #Каталог логов, каталог временных файлов, каталог конфигураций, каталог отправляемых функций
 dir_logs="$dir_runscript/logs"
@@ -957,7 +957,15 @@ function check_settings {
 
   sshtimeout="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^sshConnectTimeout[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
 
+  ssh_check_interval="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^sshCheckInterval[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
+
+  ssh_check_col="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^sshCheckCol[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
+
+  rsync_timeout="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^RsyncTimeout[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
+
   numportssh="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^numportssh[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
+
+  copy_send_files="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^copy_send_files[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
 
   reboot_max_try_wait_devaice="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^reboot_max_try_wait_devaice[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
 
@@ -971,17 +979,88 @@ function check_settings {
 
   logname="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^loginname[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
 
-  if [[ "$(grep -Eo '^[A-Za-zА-Яа-я0-9.-]+$' <<<"$(printf "%s" $(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreInaccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u))" | wc -l)" -eq "1" ]]; then
-    readarray -d ';' -t listIgnoreInaccurate < <(printf "%s" $(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreInaccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';' | sed -e 's/.$//g'))
-  else
-    echo -e "\n${YELLOW}Пропуск чтения значений параметра listIgnoreInaccurate из выбранной секции настроек файла sssc.conf. Параметр пуст или содержит запрещенные символы в значениях.$NoColor"
+  file_listIgnoreInaccurate="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^file_listIgnoreInaccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
+
+  #Если путь к файлу не пуст
+  if [[ -n "$file_listIgnoreInaccurate" ]]; then
+
+    #Если путь соответствует шаблону
+    if ! [[ "$file_listIgnoreInaccurate" =~ $check_path ]]; then
+
+      echo -e "\n${YELLOW}Значение параметра file_listIgnoreInaccurate содержит недопустимые символы.$NoColor"
+      exit 1
+    else
+      #Если файл существует
+      if [[ -f "$file_listIgnoreInaccurate" ]]; then
+
+        #Если незакомментированные значения в файле соответствуют шаблону
+        if [[ "$(grep -iv '#' "$file_listIgnoreInaccurate" | grep -Ev '^[A-Za-zА-Яа-я0-9.-]+$' | wc -l)" -eq "0" ]]; then
+
+          listIgnoreInaccurate=($(grep -iv '#' "$file_listIgnoreInaccurate" | grep -E '^[A-Za-zА-Яа-я0-9.-]+$'))
+        else
+          echo -e "\nФайл '$file_listIgnoreInaccurate' содержит некорректные значения."
+          exit 1
+        fi
+      else
+        echo -e "\n${YELLOW}Файл '$file_listIgnoreInaccurate' не найден.$NoColor"
+        exit 1
+      fi
+    fi
   fi
 
-  if [[ "$(grep -Eo '^[A-Za-zА-Яа-я0-9.-]+$' <<<"$(printf "%s" $(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreAccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u))" | wc -l)" -eq "1" ]]; then
-    readarray -d ';' -t listIgnoreAccurate < <(printf "%s" $(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreAccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u | tr '\n' ';' | sed -e 's/.$//g'))
-  else
-    echo -e "\n${YELLOW}Пропуск чтения значений параметра listIgnoreAccurate из выбранной секции настроек файла sssc.conf. Параметр пуст или содержит запрещенные символы в значениях.$NoColor"
+  file_listIgnoreAccurate="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^file_listIgnoreAccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
+
+  #Если путь к файлу не пуст
+  if [[ -n "$file_listIgnoreAccurate" ]]; then
+
+    #Если путь соответствует шаблону
+    if ! [[ "$file_listIgnoreAccurate" =~ $check_path ]]; then
+
+      echo -e "\n${YELLOW}Значение параметра file_listIgnoreAccurate содержит недопустимые символы.$NoColor"
+      exit 1
+    else
+      #Если файл существует
+      if [[ -f "$file_listIgnoreAccurate" ]]; then
+
+        #Если незакомментированные значения в файле соответствуют шаблону
+        if [[ "$(grep -iv '#' "$file_listIgnoreAccurate" | grep -Ev '^[A-Za-zА-Яа-я0-9.-]+$' | wc -l)" -eq "0" ]]; then
+
+          listIgnoreAccurate=($(grep -iv '#' "$file_listIgnoreAccurate" | grep -E '^[A-Za-zА-Яа-я0-9.-]+$'))
+        else
+          echo -e "\nФайл '$file_listIgnoreAccurate' содержит некорректные значения."
+          exit 1
+        fi
+      else
+        echo -e "\n${YELLOW}Файл '$file_listIgnoreAccurate' не найден.$NoColor"
+        exit 1
+      fi
+    fi
   fi
+
+  if [[ "$(grep -Ev '^[A-Za-zА-Яа-я0-9.-]+$' <<<"$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreInaccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u)" | wc -l)" -eq "0" ]]; then
+
+    for temp_list_ignore in $(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreInaccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u); do
+      listIgnoreInaccurate+=("$temp_list_ignore")
+    done
+
+  else
+    echo -e "\n${YELLOW}Пропуск чтения значений параметра listIgnoreInaccurate из выбранной секции настроек файла sssc.conf. Параметр содержит запрещенные символы в значениях.$NoColor"
+    exit 1
+  fi
+
+  if [[ "$(grep -Ev '^[A-Za-zА-Яа-я0-9.-]+$' <<<"$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreAccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u)" | wc -l)" -eq "0" ]]; then
+
+    for temp_list_ignore in $(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreAccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u); do
+      listIgnoreAccurate+=("$temp_list_ignore")
+    done
+
+  else
+    echo -e "\n${YELLOW}Пропуск чтения значений параметра listIgnoreAccurate из выбранной секции настроек файла sssc.conf. Параметр содержит запрещенные символы в значениях.$NoColor"
+    exit 1
+  fi
+
+  listIgnoreInaccurate=($(printf '%s\n' "${listIgnoreInaccurate[@]}" | sort -u | grep -Ev "^$"))
+  listIgnoreAccurate=($(printf '%s\n' "${listIgnoreAccurate[@]}" | sort -u | grep -Ev "^$"))
 
   skipchangescriptfile="$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^skipchangescriptfile[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr -d '\n')"
 
@@ -1008,10 +1087,10 @@ function check_settings {
   title_msg="Тип ssh подключения"
   text_msg="Выберите тип ssh подключения:"
   name_variable='sshtypecon'
-  templist_selectvalue=("pas" "key")
+  templist_selectvalue=("pas" "key" "kerberos")
 
   #Если параметр типа ssh подключения не соответствует условию, то выдается список с выбором типа подключения
-  while [[ "$sshtypecon" != "pas" && "$sshtypecon" != "key" ]]; do
+  while [[ "$sshtypecon" != "pas" && "$sshtypecon" != "key" && "$sshtypecon" != "kerberos" ]]; do
 
     if [[ "$exec_no_display" -eq "1" ]]; then
       echo -e "\n$text_msg"
@@ -1090,6 +1169,20 @@ function check_settings {
     #Назначение прав 400 на закрытый ключ ssh
     chmod 400 "$sshkeyfile" 2>/dev/null
 
+  fi
+
+  #Если выбрано ssh соединение через kerberos, то проверяется наличие у текущего пользователя активного kerberos билета.
+  if [[ "$sshtypecon" = "kerberos" ]]; then
+
+    if [[ -n "$(which klist 2>/dev/null)" ]] && [[ -n "$(which kinit 2>/dev/null)" ]]; then
+      if [[ "$(klist -A -s && echo 1 || echo 0)" -eq "0" ]]; then
+        echo "Не найден актуальный kerberos билет. Получите билет командой kinit и запустите выполнение заново."
+        exit 1
+      fi
+    else
+      echo "Выбран метод подключения через kerberos, но не найден klist или kinit. Проверьте наличие файлов в системе."
+      exit 1
+    fi
   fi
   [[ $debug == 1 ]] && set -x && unset debug
 
@@ -1224,9 +1317,24 @@ function check_settings {
     echo -e "${YELLOW}Значение multisend пустое или не является числом. Выставлено значение по умолчанию: $multisend $NoColor"
   fi
 
-  if ! [[ "$sshtimeout" =~ $check_num ]] || [[ "$sshtimeout" -le "0" ]]; then
+  if ! [[ "$sshtimeout" =~ $check_num ]]; then
     sshtimeout="5"
-    echo -e "${YELLOW}Значение sshtimeout пустое или не является числом. Выставлено значение по умолчанию: $sshtimeout $NoColor"
+    echo -e "${YELLOW}Значение sshConnectTimeout пустое или не является числом. Выставлено значение по умолчанию: $sshtimeout $NoColor"
+  fi
+
+  if ! [[ "$ssh_check_interval" =~ $check_num ]]; then
+    ssh_check_interval="30"
+    echo -e "${YELLOW}Значение sshCheckInterval пустое или не является числом. Выставлено значение по умолчанию: $ssh_check_interval $NoColor"
+  fi
+
+  if ! [[ "$ssh_check_col" =~ $check_num ]] || [[ "$ssh_check_col" -le "0" ]]; then
+    ssh_check_col="2"
+    echo -e "${YELLOW}Значение sshCheckCol пустое или не является числом. Выставлено значение по умолчанию: $ssh_check_col $NoColor"
+  fi
+
+  if ! [[ "$rsync_timeout" =~ $check_num ]]; then
+    rsync_timeout="900"
+    echo -e "${YELLOW}Значение RsyncTimeout пустое или не является числом. Выставлено значение по умолчанию: $rsync_timeout $NoColor"
   fi
 
   if ! [[ "$numportssh" =~ $check_num ]] || [[ "$numportssh" -le "0" ]]; then
@@ -1242,6 +1350,11 @@ function check_settings {
   if ! [[ "$reboot_time_wait_devaice" =~ $check_num ]] || [[ "$reboot_time_wait_devaice" -le "0" ]]; then
     reboot_time_wait_devaice="10"
     echo -e "${YELLOW}Значение reboot_time_wait_devaice пустое или не является числом. Выставлено значение по умолчанию: $reboot_time_wait_devaice $NoColor"
+  fi
+
+  if ! [[ "$copy_send_files" =~ $check_num ]] || [[ "$copy_send_files" -gt "1" ]]; then
+    copy_send_files="0"
+    echo -e "${YELLOW}Значение copy_send_files пустое или не является числом. Выставлено значение по умолчанию: $copy_send_files $NoColor"
   fi
 
   unset title_msg
@@ -1604,8 +1717,9 @@ function select_type_run_remote_script {
 #Инициализация необходимых переменных и подготовка файлов
 function initialsetup {
 
-  value_date="$(date +"%Y%m%d-%H%M%S")"
-  temp_dir_send_script="$dir_temp/sssc-$value_date-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 3)"
+  value_date="$(date +"%Y%m%d-%H%M%S-%4N")"
+  temp_dir_send_script="$dir_temp/sssc-$value_date"
+  #temp_dir_send_script="$dir_temp/sssc-$value_date-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 3)"
   unset err_status_sendfunc
 
   #Показать информацию, если выбрано более одного скрипта
@@ -1668,7 +1782,8 @@ function initialsetup {
     echo -e "Проверка выполненной ранее версии скрипта: ${YELLOW} $([[ "$check_version_exec_script" -eq "1" ]] && echo "Выполняется (Версия № $local_version_exec_script)" || echo "Не выполняется") $NoColor\n"
 
     #Имя скрипта для отправки
-    tempnamescript="$value_date-$nlpss-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 10)"
+    #tempnamescript="$value_date-$nlpss-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 10)"
+    tempnamescript="$value_date-$nlpss"
 
     #Временный каталог в который будет скопировано все необходимое и он будет отправлен на удаленный компьютер
     tfs="$temp_dir_send_script/$tempnamescript"
@@ -1739,7 +1854,12 @@ path_exec_script_version=\"$path_exec_script_version\"
     #Если выбран каталог с файлами для отправки, то на него создается симлинк в отправляемом каталоге и добавляется переменная в скрипт
     if [[ -n "$select_dirfiles" ]]; then
       sed -i "2s%^%dirfiles=\"\$(dirname \"\$(realpath \$0)\")/$select_dirfiles\"\n%" "$tfs/$tempnamescript"
-      ln -s "$dir_files_send/$select_dirfiles" "$tfs/$select_dirfiles"
+
+      if [[ "$copy_send_files" -eq "1" ]]; then
+        cp -fR "$dir_files_send/$select_dirfiles" "$tfs/"
+      else
+        ln -s "$dir_files_send/$select_dirfiles" "$tfs/$select_dirfiles"
+      fi
     fi
 
     #Если тип выполнения скрипта autopassudo (автовведение sudo пароля), то добавляем в отправляемый скрипт переопределение дескриптора ввода (stdin) на /dev/tty во вторую строку. Изменение дескриптора ввода необходимо для возвращения интерактивности скрипту, т.к. повышение прав через sudo -S автоматически переназначает дескриптор ввода на pipe
@@ -1841,6 +1961,8 @@ function changescriptfile {
   if [[ "${#listparamchange[@]}" -gt "0" ]]; then
     let repeatcyclemain=1
     let numlastvalue=${#listparamchange[@]}-1
+
+    cp -f "$tfs/$tempnamescript" "$tfs/$tempnamescript.orig"
 
     while [[ "$repeatcyclemain" -eq "1" ]]; do
 
@@ -2210,9 +2332,16 @@ $NoColor"
           echo -e "\n${RED}Имя блока в файле \"$namesendscript/script.conf\" содержит недопустимые символы$NoColor"
         fi
       done
-      echo -e "${YELLOW}\n-----Содержимое отправляемого файла-----\n$NoColor"
-      cat "$tfs/$tempnamescript"
-      echo -e "${YELLOW}\n-----Конец содержимого отправляемого файла-----\n$NoColor"
+
+      infmsg="Показать содержимое отправляемого файла скрипта? [y/n]: "
+      errmsg="Показ содержимого пропущен"
+      yes_or_no
+
+      if [[ "$ynaction" = "yes" ]]; then
+        echo -e "${YELLOW}\n-----Содержимое отправляемого файла-----\n$NoColor"
+        cat "$tfs/$tempnamescript"
+        echo -e "${YELLOW}\n-----Конец содержимого отправляемого файла-----\n$NoColor"
+      fi
 
       infmsg="Завершить внесение изменений в отправляемый скрипт? (проверьте корректность внесенных изменений в файл '$tfs/$tempnamescript') [y/n]: "
       errmsg="Запущено повторное изменение переменных"
@@ -2239,7 +2368,19 @@ $NoColor"
         unset temp_list_block_changes_values
         unset temp_terms_block_changes_curent_variable
         unset temp_list_terms_block_changes_curent_variable
+      else
+
+        if [[ "$(sha1sum "$tfs/$tempnamescript.orig" | cut -d ' ' -f 1)" != "$(sha1sum "$tfs/$tempnamescript" | cut -d ' ' -f 1)" ]]; then
+          infmsg="Восстановить оригинальный файл скрипта? [y/n]: "
+          errmsg="Оставлен текущий вариант скрипта"
+          yes_or_no
+
+          if [[ "$ynaction" = "yes" ]]; then
+            cp -f "$tfs/$tempnamescript.orig" "$tfs/$tempnamescript"
+          fi
+        fi
       fi
+
     done
   else
     echo -e "\n${RED}В файле script.conf не найдены имена переменных для изменения$NoColor\n"
@@ -2468,13 +2609,13 @@ function create_list_files_hosts {
 
 #Генерация списка ip адресов для отправки
 function create_listip {
-  #Считывание в массив строк из выбранного файла хостов
-  readarray -d ';' -t subnetaddres < <(printf "%s" $(cat "$dir_runscript/$select_file_hosts" | grep -iv '#' | grep -Ev '^$' | sort | tr '\n' ';' | sed -e 's/.$//g'))
+  #Считывание количества строк из выбранного файла хостов
+  subnetaddres="$(cat "$dir_runscript/$select_file_hosts" | grep -iv '#' | grep -Ev '^$' | sort | wc -l)"
 
-  echo -e "Количество записей для поиска устройств в сети: ${#subnetaddres[@]}\n"
+  echo -e "Количество записей для поиска устройств в сети: $subnetaddres\n"
 
-  #Если массив не пуст, то выполнение продолжается
-  if [[ "${#subnetaddres[@]}" -gt "0" ]]; then
+  #Если больше 0, то выполнение продолжается
+  if [[ "$subnetaddres" -gt "0" ]]; then
 
     #Если отправка на все устройства в сети, то показать количество записей в списках исключений
     if [[ "$typesend" = "sshmultisend" ]]; then
@@ -2485,122 +2626,85 @@ function create_listip {
     echo -e "\nПоиск устройств в сети\n"
 
     #Формирование массива с найденными в сети устройствами
-    readarray -d ';' -t list_ipall < <(nmap -sP -iL "$dir_runscript/$select_file_hosts" 2>/dev/null | grep -E '^Nmap scan' | sed "s/Nmap scan report for //g" | sort -u | tr '\n' ';' | sed -e 's/.$//g')
+    readarray -t list_ipall < <(nmap -Pn --host-timeout 60s -p $numportssh --open -oG - -iL "$dir_runscript/$select_file_hosts" 2>/dev/null | awk '/Host:/ && /\/open\/tcp/ { gsub(/[()]/, "", $3); print $2, $3 }' | sort -u)
 
     #Блок кода только для отправки на все устройства
     if [[ "$typesend" = "sshmultisend" ]]; then
 
       let col_value_ignore=0
 
-      if [[ "${#list_ipall[@]}" -gt "0" ]]; then
-        #Если записей для пропуска по частичному совпадению больше 0, то выполняем фильтрацию. За 1 цикл одновременно ищется 15 элементов из списка исключения.
-        if [[ "${#listIgnoreInaccurate[@]}" -gt "0" ]]; then
+      if [[ "${#list_ipall[@]}" -gt 0 && "${#listIgnoreInaccurate[@]}" -gt 0 ]]; then
+        echo -e "Запущена проверка и фильтрация значений по частичному совпадению\n"
 
-          echo -e "Запущена проверка и фильтрация значений по частичному совпадению\n"
+        readarray -t filtered < <(
+          # Передаем список частичных исключений в первый поток awk
+          # Шаг 1: Собираем все исключения в массив patterns
+          # Шаг 2: Получаем ip и host (если существует) в нижнем регистре
+          # Шаг 3: Перебираем массив patterns и проверяем, является ли значение частью ip или имени хоста (если этот столбец есть)
+          # Шаг 4: Если совпадений не найдено — выводим строку
+          printf '%s\n' "${listIgnoreInaccurate[@]}" | grep -v '^$' |
+            awk -v RS='\r?\n' '
+            FILENAME == "-" {
+                patterns[tolower($0)] = 1
+                next
+            }
 
-          if [[ "${#listIgnoreInaccurate[@]}" -lt "15" ]]; then
-            let intervalvalue=${#listIgnoreInaccurate[@]}
-          else
-            let intervalvalue=15
-          fi
+            {
+                ip = tolower($1)
+                host = (NF > 1) ? tolower($2) : ""
+                skip = 0
 
-          #Вычисление количества необходимых циклов
-          let colcycle="(${#listIgnoreInaccurate[@]}/$intervalvalue)"
 
-          #Вычисление остатка от деления
-          let modulecolcycle="${#listIgnoreInaccurate[@]}%$intervalvalue"
+                for (p in patterns) {
+                    if (index(ip, p) > 0 || (host != "" && index(host, p) > 0)) {
+                        skip = 1
+                        break
+                    }
+                }
 
-          for ((i = 0; i < $colcycle; i++)); do
-            if [[ "${#list_ipall[@]}" -gt "0" ]]; then
-              let startvalue=$intervalvalue*$i
+                if (!skip) {
+                    print $0
+                }
+            }
+        ' - <(printf '%s\n' "${list_ipall[@]}")
+        )
 
-              unset col_ignore
-
-              col_ignore="$(grep -Ei "$(tr '\n ' '|' <<<"${listIgnoreInaccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$(sed 's/^ //' <<<"${list_ipall[@]/%/$'\n'}" | grep -v '^$')" | wc -l)"
-
-              #Если найдены значения из списка исключения в списке хостов, то фильтруем и перезаписываем переменную
-              if [[ "$col_ignore" -gt "0" ]]; then
-                list_ipall=($(grep -Eiv "$(tr '\n ' '|' <<<"${listIgnoreInaccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$(sed 's/^ //' <<<"${list_ipall[@]/%/$'\n'}" | grep -v '^$')"))
-                let col_value_ignore+=$col_ignore
-              fi
-            else
-              break
-            fi
-          done
-
-          if [[ "${#list_ipall[@]}" -gt "0" ]]; then
-            #Если остаток от деления не равен нулю, то оставшиеся значения проверяем в последнем условии
-            if [[ "$modulecolcycle" -ne "0" ]]; then
-              let startvalue=$intervalvalue*$colcycle
-
-              unset col_ignore
-
-              col_ignore="$(grep -Ei "$(tr '\n ' '|' <<<"${listIgnoreInaccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$(sed 's/^ //' <<<"${list_ipall[@]/%/$'\n'}" | grep -v '^$')" | wc -l)"
-
-              #Если найдены значения из списка исключения в списке хостов, то фильтруем и перезаписываем переменную
-              if [[ "$col_ignore" -gt "0" ]]; then
-                list_ipall=($(grep -Eiv "$(tr '\n ' '|' <<<"${listIgnoreInaccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$(sed 's/^ //' <<<"${list_ipall[@]/%/$'\n'}" | grep -v '^$')"))
-                let col_value_ignore+=$col_ignore
-              fi
-            fi
-          fi
-        fi
+        let col_ignore="${#list_ipall[@]} - ${#filtered[@]}"
+        let col_value_ignore+=col_ignore
+        list_ipall=("${filtered[@]}")
       fi
 
-      #Если список адресов не пуст
-      if [[ "${#list_ipall[@]}" -gt "0" ]]; then
-        #Если записей для пропуска по точному совпадению больше 0, то выполняем фильтрацию. За 1 цикл одновременно ищется 15 элементов из списка исключения.
-        if [[ "${#listIgnoreAccurate[@]}" -gt "0" ]]; then
+      if [[ "${#list_ipall[@]}" -gt 0 && "${#listIgnoreAccurate[@]}" -gt 0 ]]; then
+        echo -e "Запущена проверка и фильтрация значений по точному совпадению\n"
 
-          echo -e "Запущена проверка и фильтрация значений по точному совпадению\n"
+        readarray -t filtered < <(
+          # Передаем список точных исключений в первый поток awk
+          # Шаг 1: Собираем все исключения в массив ignore_list
+          # Шаг 2: Получаем ip и host (если существует) в нижнем регистре
+          # Шаг 3: Строка выводится ТОЛЬКО если ни IP, ни Имя целиком не входят в хэш-таблицу
+          printf '%s\n' "${listIgnoreAccurate[@]}" | grep -v '^$' |
+            awk -v RS='\r?\n' '
 
-          if [[ "${#listIgnoreAccurate[@]}" -lt "15" ]]; then
-            let intervalvalue=${#listIgnoreAccurate[@]}
-          else
-            let intervalvalue=15
-          fi
+            FILENAME == "-" {
+                ignore_list[tolower($0)] = 1
+                next
+            }
 
-          #Вычисление количества необходимых циклов
-          let colcycle="(${#listIgnoreAccurate[@]}/$intervalvalue)"
+            {
+                ip = tolower($1)
+                host = (NF > 1) ? tolower($2) : ""
 
-          #Вычисление остатка от деления
-          let modulecolcycle="${#listIgnoreAccurate[@]}%$intervalvalue"
 
-          for ((i = 0; i < $colcycle; i++)); do
-            if [[ "${#list_ipall[@]}" -gt "0" ]]; then
-              let startvalue=$intervalvalue*$i
+                if (!(ip in ignore_list) && (host == "" || !(host in ignore_list))) {
+                    print $0
+                }
+            }
+        ' - <(printf '%s\n' "${list_ipall[@]}")
+        )
 
-              unset col_ignore
-
-              col_ignore="$(grep -Eiw "$(tr '\n ' '|' <<<"${listIgnoreAccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$(sed 's/^ //' <<<"${list_ipall[@]/%/$'\n'}" | grep -v '^$')" | wc -l)"
-
-              #Если найдены значения из списка исключения в списке хостов, то фильтруем и перезаписываем переменную
-              if [[ "$col_ignore" -gt "0" ]]; then
-                list_ipall=($(grep -Eivw "$(tr '\n ' '|' <<<"${listIgnoreAccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$(sed 's/^ //' <<<"${list_ipall[@]/%/$'\n'}" | grep -v '^$')"))
-                let col_value_ignore+=$col_ignore
-              fi
-            else
-              break
-            fi
-          done
-
-          if [[ "${#list_ipall[@]}" -gt "0" ]]; then
-            #Если остаток от деления не равен нулю, то оставшиеся значения проверяем в последнем условии
-            if [[ "$modulecolcycle" -ne "0" ]]; then
-              let startvalue=$intervalvalue*$colcycle
-
-              unset col_ignore
-
-              col_ignore="$(grep -Eiw "$(tr '\n ' '|' <<<"${listIgnoreAccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$(sed 's/^ //' <<<"${list_ipall[@]/%/$'\n'}" | grep -v '^$')" | wc -l)"
-
-              #Если найдены значения из списка исключения в списке хостов, то фильтруем и перезаписываем переменную
-              if [[ "$col_ignore" -gt "0" ]]; then
-                list_ipall=($(grep -Eivw "$(tr '\n ' '|' <<<"${listIgnoreAccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$(sed 's/^ //' <<<"${list_ipall[@]/%/$'\n'}" | grep -v '^$')"))
-                let col_value_ignore+=$col_ignore
-              fi
-            fi
-          fi
-        fi
+        let col_ignore="${#list_ipall[@]} - ${#filtered[@]}"
+        let col_value_ignore+=col_ignore
+        list_ipall=("${filtered[@]}")
       fi
 
       echo -e "\nКоличество исключенных устройств: $col_value_ignore\n"
@@ -2627,7 +2731,7 @@ function create_listip {
 
 #Разделение списка устройств на количество потоков
 function splitting_list_into_parts {
-  echo -e "Устройств в списке: ${#list_ipall[@]}\n"
+  echo -e "Устройств в списке (с открытым портом $numportssh): ${#list_ipall[@]}\n"
 
   #Продолжаем, если список адресов не пуст
   if [[ "${#list_ipall[@]}" -gt "0" ]]; then
@@ -2649,34 +2753,54 @@ function splitting_list_into_parts {
     #Если количество потоков больше 1, то разбивка массива найденных ip на указанное количество потоков
     if [[ "$multisend" -gt "1" ]]; then
 
-      #Вычисление значения, сколько устройств должно быть в 1 потоке
-      let ipcountinstream="${#list_ipall[@]}/$multisend"
+      list_ip=()
 
-      #Вычисление остатка от деления
-      let moduleipcountinstream="${#list_ipall[@]}%$multisend"
+      for ((i = 0, num_mas = 0; i < "${#list_ipall[@]}"; i++, num_mas++)); do
 
-      #Вычисление значения, сколько устройств должно быть в последнем потоке
-      let ipcountlaststream="$ipcountinstream+$moduleipcountinstream"
+        #Если num_mas будет больше или равен multisend, то обнулить num_mas
+        if [[ "$num_mas" -ge "$multisend" ]]; then
+          let num_mas=0
+        fi
 
-      #Т.к. отсчет начинается с 0, отнимаем от количества потоков 1 и получаем номер последнего потока
-      let lastmultisend="$multisend-1"
-
-      #Запись в новый массив диапазона значений согласно условию
-      for ((i = 0; i < $lastmultisend; i++)); do
-        let j=$ipcountinstream*$i
-        list_ip[$i]=$(echo "${list_ipall[@]:$j:$ipcountinstream}")
+        if [[ "$i" -lt "$multisend" ]]; then
+          list_ip[$num_mas]="${list_ipall[$i]}"
+        else
+          list_ip[$num_mas]+=" ${list_ipall[$i]}"
+        fi
       done
 
-      #Запись в новый массив диапазона значений согласно условию для последнего потока
-      let j=$ipcountinstream*$lastmultisend
-      list_ip[$lastmultisend]=$(echo "${list_ipall[@]:$j:$ipcountlaststream}")
+      #       #Альтернатива
+      #       #Вычисление значения, сколько устройств должно быть в 1 потоке
+      #       let ipcountinstream="${#list_ipall[@]}/$multisend"
+      #
+      #       #Вычисление остатка от деления
+      #       let moduleipcountinstream="${#list_ipall[@]}%$multisend"
+      #
+      #       #Запись в новый массив диапазона значений согласно условию
+      #       for ((i = 0; i < $multisend; i++)); do
+      #         let j=$ipcountinstream*$i
+      #         list_ip[$i]=$(echo "${list_ipall[@]:$j:$ipcountinstream}")
+      #       done
+      #
+      #       #Если остаток от деления больше 0, то раскидываем оставшиеся значения в имеющиеся потоки
+      #       if [[ "$moduleipcountinstream" -gt "0" ]]; then
+      #         let j=$ipcountinstream*$multisend
+      #
+      #         for ((i = $j, num_mas = 0; i < "${#list_ipall[@]}"; i++, num_mas++)); do
+      #
+      #           #Если num_mas будет больше или равен multisend, то обнулить num_mas
+      #           if [[ "$num_mas" -ge "$multisend" ]]; then
+      #             let num_mas=0
+      #           fi
+      #
+      #           list_ip[$num_mas]=$(echo "${list_ip[$num_mas]} ${list_ipall[$i]}")
+      #         done
+      #       fi
     fi
   fi
 
   unset ipcountinstream
   unset moduleipcountinstream
-  unset ipcountlaststream
-  unset lastmultisend
 }
 
 #Запуск отправки в зависимости от количества потоков
@@ -2684,7 +2808,18 @@ function prerunsend {
   #Если массив ip адресов не пуст и значение потоков рассылки равно 1
   if [[ "${#list_ipall[@]}" -gt "0" ]] && [[ "$multisend" -eq "1" ]]; then
     runsend
+
     delsendfiles
+
+    sed -n '/#---Начало нужной информации/,/#---Конец нужной информации/p' "$dir_logs/$logfile" >"$dir_logs/$logfile.filter"
+
+    if [[ "$(stat -c %s "$dir_logs/$logfile.filter")" -le "10" ]]; then
+      rm -f "$dir_logs/$logfile.filter"
+    fi
+
+    echo -e "\n${GREEN}Выполнение завершено $NoColor\n"
+
+    echo "log файл: '$dir_logs/$logfile'"
   fi
 
   #Если массив ip адресов не пуст и значение потоков рассылки больше 1
@@ -2737,6 +2872,9 @@ reboot_max_try_wait_devaice=\"$reboot_max_try_wait_devaice\"
 reboot_time_wait_devaice=\"$reboot_time_wait_devaice\"
 remotedirgroup=\"$remotedirgroup\"
 sshtimeout=\"$sshtimeout\"
+ssh_check_interval=\"$ssh_check_interval\"
+ssh_check_col=\"$ssh_check_col\"
+rsync_timeout=\"$rsync_timeout\"
 numportssh=\"$numportssh\"
 typesendfiles=\"$typesendfiles\"
 typesend=\"$typesend\"
@@ -2936,9 +3074,22 @@ function multisend_exec_info_in_one_file {
     echo "" >>"$sendlogs/all-sendinfo.txt"
   done
 
+  for file_log in $(ls -1 "$sendlogs" | grep "^sssc"); do
+
+    sed -n '/#---Начало нужной информации/,/#---Конец нужной информации/p' "$sendlogs/$file_log" >>"$sendlogs/log-filter.txt"
+
+  done
+
+  if [[ "$(grep -vE '^[[:space:]]*$' <"$sendlogs/log-filter.txt" | wc -l)" -eq "0" ]]; then
+    rm -f "$sendlogs/log-filter.txt"
+  fi
+
   unset file_log
 
   echo -e "${GREEN}Обработка log файлов завершена$NoColor"
+
+  echo ""
+  echo "Каталог с log файлами: '$sendlogs'"
 }
 
 #Удаление переменных
@@ -3023,12 +3174,12 @@ function runsend {
     done
   fi
 
-  #Продолжаем, если номер дескриптора является числом или подключение по ключу
-  if [[ "$num_descriptior" =~ $check_num ]] || [[ "$sshtypecon" = "key" ]]; then
+  #Продолжаем, если номер дескриптора является числом, подключение по ключу или через kerberos
+  if [[ "$num_descriptior" =~ $check_num ]] || [[ "$sshtypecon" = "key" ]] || [[ "$sshtypecon" = "kerberos" ]]; then
 
     if [[ "$multisend" -eq "1" ]]; then
       #Имя лог файла для однопоточной отправки
-      logfile="$(date +"%Y.%m.%d-%H%M%S")_$(echo "${list_param_send_script[0]}" | cut -d ';' -f 1)_${#list_param_send_script[@]}"
+      logfile="${value_date}-$(echo "${list_param_send_script[0]}" | cut -d ';' -f 1)_${#list_param_send_script[@]}"
 
       echo "Начало выполнения: ($(date +"%Y.%m.%d %H:%M:%S"))" >>"$dir_logs/$logfile"
 
@@ -3125,7 +3276,7 @@ function sshsendscript {
 
   function create_list_failed {
     #Добавление текущего устройства в массив списка устройств к которым не удалось подключиться (начиная со второго скрипта) или произошла ошибка передачи/запуска/выполнения скрипта
-    list_failed_scripts[${#list_failed_scripts[@]}]="$(echo "$errconnmsg ${list_ipall[$i]} (Скрипт № $(expr $num_send_script + 1): $namesendscript)")"
+    list_failed_scripts[${#list_failed_scripts[@]}]="$(echo "$errconnmsg ${list_ipall[$i]} (Скрипт № $(expr $num_send_script + 1): $namesendscript)$([[ "$multisend" -gt "1" ]] && echo " (Файл лога: $namescript)")")"
 
     if [[ "$err_exec_script" -eq "0" ]] && [[ "${#list_param_send_script[@]}" -gt "1" ]]; then
       create_list_devices_err_exec_scripts
@@ -3140,7 +3291,7 @@ function sshsendscript {
 
   function create_list_successful_exec_script {
     #Добавление текущего устройства (имя хоста и ip адрес) в массив списка устройств на которых было успешно завершено выполнение скрипта
-    list_successful_exec_script[${#list_successful_exec_script[@]}]="${errconnmsg}$remhost - ${list_ipall[$i]} (Скрипт № $(expr $num_send_script + 1): $namesendscript)"
+    list_successful_exec_script[${#list_successful_exec_script[@]}]="${errconnmsg}$remhost - ${list_ipall[$i]} (Скрипт № $(expr $num_send_script + 1): $namesendscript)$([[ "$multisend" -gt "1" ]] && echo " (Файл лога: $namescript)")"
   }
 
   function create_list_successful_exec_full_scripts {
@@ -3174,28 +3325,21 @@ function sshsendscript {
 
     [[ $debug == 1 ]] && set -x && unset debug
 
-    #Команда подключения ssh
-    sshconcmd='sshpass -d $num_descriptior ssh -F /dev/null -o ConnectTimeout=$sshtimeout -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password -t -t $logname@$(printf %s ${list_ipall[$i]}) -p $numportssh "${sshcmd[$sshcmdnum]}"'
-
-    #Команда подключения scp
-    scpconcmd='sshpass -d $num_descriptior scp $scprun -C -F /dev/null -o ConnectTimeout=$sshtimeout -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password -P $numportssh -r "$temp_dir_send_script/$tempnamescript" $logname@$(printf %s ${list_ipall[$i]}):"$scpcmd"'
-
-    #Команда подключения rsync
-    rsyncconcmd='sshpass -d $num_descriptior rsync -avkczhe "ssh -F /dev/null -o ConnectTimeout=$sshtimeout -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password -p $numportssh" --progress "$temp_dir_send_script/$tempnamescript" $logname@$(printf %s ${list_ipall[$i]}):"$remotedirrunscript"'
+    source "$dir_runscript/con_pas.sh"
 
     let cmdready=1
   fi
 
   #Если подключение по ключу
   if [[ "$sshtypecon" = "key" ]]; then
-    #Команда подключения ssh
-    sshconcmd='ssh -F /dev/null -o ConnectTimeout=$sshtimeout -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=yes -o PreferredAuthentications=publickey -o IdentitiesOnly=yes -i "$sshkeyfile" -o AddKeysToAgent=yes -t -t $logname@$(printf %s ${list_ipall[$i]}) -p $numportssh "${sshcmd[$sshcmdnum]}"'
+    source "$dir_runscript/con_key.sh"
 
-    #Команда подключения scp
-    scpconcmd='scp $scprun -C -F /dev/null -o ConnectTimeout=$sshtimeout -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=yes -o PreferredAuthentications=publickey -o IdentitiesOnly=yes -i "$sshkeyfile" -o AddKeysToAgent=yes -P $numportssh -r "$temp_dir_send_script/$tempnamescript" $logname@$(printf %s ${list_ipall[$i]}):"$scpcmd"'
+    let cmdready=1
+  fi
 
-    #Команда подключения rsync
-    rsyncconcmd='rsync -avkczhe "ssh -F /dev/null -o ConnectTimeout=$sshtimeout -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=yes -o PreferredAuthentications=publickey -o IdentitiesOnly=yes -i "$sshkeyfile" -o AddKeysToAgent=yes -p $numportssh" --progress "$temp_dir_send_script/$tempnamescript" $logname@$(printf %s ${list_ipall[$i]}):"$remotedirrunscript"'
+  #Если подключение через kerberos
+  if [[ "$sshtypecon" = "kerberos" ]]; then
+    source "$dir_runscript/con_kerberos.sh"
 
     let cmdready=1
   fi
@@ -3290,88 +3434,32 @@ function sshsendscript {
               #Если отправка выполняется на все устройства (Мультиотправка) и это первый отправляемый на устройство скрипт, то выполняется проверка по спискам исключений (повторная проверка нужна для того, чтобы гарантировать исключение по имени хоста, т.к. при поиске nmap может не отобразить имя хоста, если, например, это другая подсеть и ваш dns сервер не может выдать имя хоста из этой подсети). Если имя хоста будет соответствовать условию любого списка исключения, то имени хоста присваивается пустое значение
               if [[ $typesend = "sshmultisend" ]] && [[ "$num_send_script" -eq "0" ]]; then
 
-                #Если записей для пропуска по частичному совпадению больше 0, то выполняем фильтрацию. За 1 цикл одновременно ищется 15 элементов из списка исключения.
-                if [[ "${#listIgnoreInaccurate[@]}" -gt "0" ]]; then
-
-                  if [[ "${#listIgnoreInaccurate[@]}" -lt "15" ]]; then
-                    let intervalvalue=${#listIgnoreInaccurate[@]}
-                  else
-                    let intervalvalue=15
-                  fi
-
-                  #Вычисление количества необходимых циклов
-                  let colcycle="(${#listIgnoreInaccurate[@]}/$intervalvalue)"
-
-                  #Вычисление остатка от деления
-                  let modulecolcycle="${#listIgnoreInaccurate[@]}%$intervalvalue"
-
-                  for ((num_cycle = 0; num_cycle < $colcycle; num_cycle++)); do
-                    let startvalue=$intervalvalue*$num_cycle
-
-                    #Если есть совпадение в списке исключения, то обнуляем переменную remhost
-                    if [[ "$(grep -Ei "$(tr '\n ' '|' <<<"${listIgnoreInaccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$remhost" | wc -l)" -gt "0" ]]; then
+                #Если записей для пропуска по частичному совпадению больше 0, то выполняем фильтрацию.
+                if [[ "${#listIgnoreInaccurate[@]}" -gt 0 ]]; then
+                  for value_filter in "${listIgnoreInaccurate[@]}"; do
+                    # Переводим обе строки в нижний регистр для регистронезависимого сравнения (аналог grep -i)
+                    if [[ "${remhost,,}" == *"${value_filter,,}"* ]]; then
                       errconnmsg="Устройство пропущено в соответствии со списком исключения"
                       create_list_skip_host
                       remhost=""
                       break 2
                     fi
                   done
-
-                  #Если остаток от деления не равен нулю, то оставшиеся значения проверяем в последнем условии
-                  if [[ "$modulecolcycle" -ne "0" ]]; then
-                    let startvalue=$intervalvalue*$colcycle
-
-                    #Если есть совпадение в списке исключения, то обнуляем переменную remhost
-                    if [[ "$(grep -Ei "$(tr '\n ' '|' <<<"${listIgnoreInaccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$remhost" | wc -l)" -gt "0" ]]; then
-                      errconnmsg="Устройство пропущено в соответствии со списком исключения"
-                      create_list_skip_host
-                      remhost=""
-                      break
-                    fi
-                  fi
                 fi
 
                 #Выполняем, если remhost не пуста
                 if [[ -n "$remhost" ]]; then
-                  #Если записей для пропуска по точному совпадению больше 0, то выполняем фильтрацию. За 1 цикл одновременно ищется 15 элементов из списка исключения.
-                  if [[ "${#listIgnoreAccurate[@]}" -gt "0" ]]; then
-
-                    if [[ "${#listIgnoreAccurate[@]}" -lt "15" ]]; then
-                      let intervalvalue=${#listIgnoreAccurate[@]}
-                    else
-                      let intervalvalue=15
-                    fi
-
-                    #Вычисление количества необходимых циклов
-                    let colcycle="(${#listIgnoreAccurate[@]}/$intervalvalue)"
-
-                    #Вычисление остатка от деления
-                    let modulecolcycle="${#listIgnoreAccurate[@]}%$intervalvalue"
-
-                    for ((num_cycle = 0; num_cycle < $colcycle; num_cycle++)); do
-                      let startvalue=$intervalvalue*$num_cycle
-
-                      #Если есть совпадение в списке исключения, то обнуляем переменную remhost
-                      if [[ "$(grep -Eiw "$(tr '\n ' '|' <<<"${listIgnoreAccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$remhost" | wc -l)" -gt "0" ]]; then
+                  #Если записей для пропуска по точному совпадению больше 0, то выполняем фильтрацию.
+                  if [[ "${#listIgnoreAccurate[@]}" -gt 0 ]]; then
+                    for value_filter in "${listIgnoreAccurate[@]}"; do
+                      # Сравниваем строки, приведя обе к нижнему регистру (аналог grep -iw)
+                      if [[ "${remhost,,}" == "${value_filter,,}" ]]; then
                         errconnmsg="Устройство пропущено в соответствии со списком исключения"
                         create_list_skip_host
                         remhost=""
                         break 2
                       fi
                     done
-
-                    #Если остаток от деления не равен нулю, то оставшиеся значения проверяем в последнем условии
-                    if [[ "$modulecolcycle" -ne "0" ]]; then
-                      let startvalue=$intervalvalue*$colcycle
-
-                      #Если есть совпадение в списке исключения, то обнуляем переменную remhost
-                      if [[ "$(grep -Eiw "$(tr '\n ' '|' <<<"${listIgnoreAccurate[@]:$startvalue:$intervalvalue}" | sed -e 's/.$//g')" <<<"$remhost" | wc -l)" -gt "0" ]]; then
-                        errconnmsg="Устройство пропущено в соответствии со списком исключения"
-                        create_list_skip_host
-                        remhost=""
-                        break
-                      fi
-                    fi
                   fi
                 fi
               fi
@@ -3445,8 +3533,8 @@ function sshsendscript {
 
                 [[ $debug == 1 ]] && set -x && unset debug
 
-                #Если отправка через scp
-                if [[ "$typesendfiles" = "scp" ]]; then
+                #Если отправка через scp или rsync не установлен на удаленном устройстве
+                if [[ "$typesendfiles" = "scp" ]] || [[ "$rsynccheck" -eq "0" ]]; then
 
                   if [[ -n "$sshversion" ]]; then
                     unset scpcmd
