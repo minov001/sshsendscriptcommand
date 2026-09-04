@@ -1037,7 +1037,7 @@ function check_settings {
     fi
   fi
 
-  if [[ "$(grep -Ev '^[A-Za-zА-Яа-я0-9.-]+$' <<<"$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreInaccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u)" | wc -l)" -eq "0" ]]; then
+  if [[ "$(grep -Ev '^[A-Za-zА-Яа-я0-9.-]+$' <<<"$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreInaccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u)" | grep -Ev '^$' | wc -l)" -eq "0" ]]; then
 
     for temp_list_ignore in $(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreInaccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u); do
       listIgnoreInaccurate+=("$temp_list_ignore")
@@ -1048,7 +1048,7 @@ function check_settings {
     exit 1
   fi
 
-  if [[ "$(grep -Ev '^[A-Za-zА-Яа-я0-9.-]+$' <<<"$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreAccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u)" | wc -l)" -eq "0" ]]; then
+  if [[ "$(grep -Ev '^[A-Za-zА-Яа-я0-9.-]+$' <<<"$(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreAccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u)" | grep -Ev '^$' | wc -l)" -eq "0" ]]; then
 
     for temp_list_ignore in $(sed -nr "/^\[$use_section_settings\]/,/^\[$nextsection\]/p" "$dir_conf/sssc.conf" | sed -nr "{ :l /^listIgnoreAccurate[ ]*=/ { s/[^=]*=[ ]*//; p; q;}; n; b l;}" | tr ';' '\n' | grep -Ev '^$' | sort -u); do
       listIgnoreAccurate+=("$temp_list_ignore")
